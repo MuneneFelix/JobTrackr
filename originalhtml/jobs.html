@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Listings - JobTrackr</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* Base styles */
+        :root {
+            --primary-blue: #1A365D;
+            --primary-teal: #2C7A7B;
+            --accent-coral: #F56565;
+            --accent-yellow: #F6E05E;
+            --text-dark: #2D3748;
+            --text-light: #718096;
+            --bg-light: #F7FAFC;
+            --white: #FFFFFF;
+            --sidebar-width: 250px;
+            --new: #48BB78;
+            --updated: #ECC94B;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-light);
+            display: flex;
+            min-height: 100vh;
+            color: var(--text-dark);
+            line-height: 1.6;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        /* Sidebar styles */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--white);
+            height: 100vh;
+            position: fixed;
+            padding: 2rem;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+        }
+
+        .sidebar-logo {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary-blue);
+            margin-bottom: 2rem;
+            text-decoration: none;
+            display: block;
+        }
+
+        .sidebar-menu {
+            list-style: none;
+        }
+
+        .sidebar-menu a {
+            display: block;
+            padding: 0.75rem 1rem;
+            color: var(--text-dark);
+            text-decoration: none;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-menu a:hover,
+        .sidebar-menu a.active {
+            background: var(--bg-light);
+            color: var(--primary-teal);
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            padding: 2rem;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .dashboard-header h1 {
+            color: var(--primary-blue);
+            font-size: 2rem;
+        }
+
+        /* Button styles */
+        .btn {
+            padding: 0.5rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--primary-teal);
+            color: var(--white);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Job Listings specific styles */
+        .filters {
+            background: var(--white);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .filter-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 1rem;
+            align-items: end;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #CBD5E0;
+            border-radius: 6px;
+            font-size: 1rem;
+            color: var(--text-dark);
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-teal);
+        }
+
+        .jobs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .job-card {
+            background: var(--white);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+            transition: transform 0.3s ease;
+        }
+
+        .job-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .job-status {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-new {
+            background: var(--new);
+            color: var(--white);
+        }
+
+        .status-updated {
+            background: var(--updated);
+            color: var(--text-dark);
+        }
+
+        .job-company {
+            color: var(--text-light);
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .job-title {
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 1rem;
+            font-size: 1.125rem;
+        }
+
+        .job-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .tag {
+            padding: 0.25rem 0.75rem;
+            background: var(--bg-light);
+            border-radius: 999px;
+            font-size: 0.75rem;
+            color: var(--text-dark);
+        }
+
+        .job-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--bg-light);
+        }
+
+        .job-date {
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                z-index: 1000;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .filter-row {
+                grid-template-columns: 1fr;
+            }
+
+            .jobs-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo">JobTrackr</div>
+        <ul class="sidebar-menu">
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/urls">URL Management</a></li>
+            <li><a href="/jobs" class="active">Job Listings</a></li>
+            <li><a href="/notifications">Notifications</a></li>
+            <li><a href="/settings">Settings</a></li>
+        </ul>
+    </aside>
+
+    <main class="main-content">
+        <div class="dashboard-header">
+            <h1>Job Listings</h1>
+            <div class="job-controls">
+                <div class="sort-options">
+                    <label>Sort by:</label>
+                    <select>
+                        <option>Newest First</option>
+                        <option>Company Name</option>
+                        <option>Location</option>
+                    </select>
+                </div>
+                
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="grid">
+                        <span class="icon">⊞</span>
+                    </button>
+                    <button class="view-btn" data-view="list">
+                        <span class="icon">☰</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <div class="filter-row">
+                <div class="form-group">
+                    <label>Search</label>
+                    <input type="text" placeholder="Search jobs...">
+                </div>
+                <div class="form-group">
+                    <label>Company</label>
+                    <select>
+                        <option>All Companies</option>
+                        <option>Google</option>
+                        <option>Microsoft</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select>
+                        <option>All Status</option>
+                        <option>New</option>
+                        <option>Updated</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="jobs-grid">
+            <div class="job-card">
+                <span class="job-status status-new">New</span>
+                <div class="job-company">Google</div>
+                <h3 class="job-title">Senior Software Engineer</h3>
+                <div class="job-meta">
+                    <span>Mountain View, CA</span>
+                    <span>Full-time</span>
+                </div>
+                <div class="tags">
+                    <span class="tag">Python</span>
+                    <span class="tag">Cloud</span>
+                    <span class="tag">AI/ML</span>
+                </div>
+                <div class="job-actions">
+                    <span class="job-date">Posted 2 hours ago</span>
+                    <button class="btn btn-primary">View Details</button>
+                </div>
+            </div>
+
+            <div class="job-card">
+                <span class="job-status status-updated">Updated</span>
+                <div class="job-company">Microsoft</div>
+                <h3 class="job-title">Product Manager</h3>
+                <div class="job-meta">
+                    <span>Redmond, WA</span>
+                    <span>Full-time</span>
+                </div>
+                <div class="tags">
+                    <span class="tag">Product</span>
+                    <span class="tag">Azure</span>
+                    <span class="tag">Management</span>
+                </div>
+                <div class="job-actions">
+                    <span class="job-date">Updated 1 day ago</span>
+                    <button class="btn btn-primary">View Details</button>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html> 

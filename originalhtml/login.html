@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - JobTrackr</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* Import base styles from index.html */
+        :root {
+            --primary-blue: #1A365D;
+            --primary-teal: #2C7A7B;
+            --accent-coral: #F56565;
+            --accent-yellow: #F6E05E;
+            --text-dark: #2D3748;
+            --text-light: #718096;
+            --bg-light: #F7FAFC;
+            --white: #FFFFFF;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-light) 0%, #E6FFFA 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-container {
+            display: flex;
+            background: var(--white);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+            width: 900px;
+            max-width: 90%;
+        }
+
+        .auth-image {
+            flex: 1;
+            background: var(--primary-blue);
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            color: var(--white);
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            .auth-image {
+                display: flex;
+            }
+        }
+
+        .auth-form {
+            flex: 1;
+            padding: 3rem;
+        }
+
+        .form-header {
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .form-header h1 {
+            color: var(--primary-blue);
+            font-family: 'Poppins', sans-serif;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-dark);
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #CBD5E0;
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-teal);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: var(--primary-teal);
+            color: var(--white);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .social-login {
+            margin-top: 2rem;
+            text-align: center;
+        }
+
+        .social-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .btn-social {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #CBD5E0;
+            border-radius: 6px;
+            background: var(--white);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .auth-footer {
+            margin-top: 2rem;
+            text-align: center;
+            color: var(--text-light);
+        }
+
+        .auth-footer a {
+            color: var(--primary-teal);
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-image">
+            <h2>Welcome Back!</h2>
+            <p>Track your dream jobs effortlessly with JobTrackr</p>
+        </div>
+        <div class="auth-form">
+            <div class="form-header">
+                <h1>Login</h1>
+                <p>Enter your credentials to access your account</p>
+            </div>
+            <form>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required>
+                </div>
+                <div class="password-strength">
+                    <div class="strength-bar"></div>
+                    <span class="strength-text">Password Strength: Strong</span>
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+            <div class="social-login">
+                <button class="social-btn google">
+                    <img src="google-icon.svg" alt="Google">
+                    Continue with Google
+                </button>
+                <button class="social-btn github">
+                    <img src="github-icon.svg" alt="GitHub">
+                    Continue with GitHub
+                </button>
+            </div>
+            <div class="auth-footer">
+                <p>Don't have an account? <a href="/signup">Sign up</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 
