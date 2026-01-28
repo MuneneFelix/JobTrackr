@@ -3,24 +3,6 @@ import PropTypes from 'prop-types';
 
 const AuthContext = createContext(null);
 
-// Mock users for testing
-const MOCK_USERS = {
-  'admin@test.com': {
-    id: 1,
-    email: 'admin@test.com',
-    password: 'admin123', // In real app, this would be hashed
-    name: 'Admin User',
-    role: 'admin'
-  },
-  'user@test.com': {
-    id: 2,
-    email: 'user@test.com',
-    password: 'user123', // In real app, this would be hashed
-    name: 'Test User',
-    role: 'user'
-  }
-};
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('user');
@@ -42,17 +24,23 @@ export function AuthProvider({ children }) {
       setLoading(true);
       setError(null);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const formData = new FormData();
+      formData.append('username', email);
+      formData.append('password', password);
 
-      const mockUser = MOCK_USERS[email];
-      if (!mockUser || mockUser.password !== password) {
-        throw new Error('Invalid email or password');
+      const response = await fetch('http://localhost:8000/token', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Login failed');
       }
 
-      // Remove password from user object before storing
-      const { password: _, ...userWithoutPassword } = mockUser;
-      setUser(userWithoutPassword);
+      const data = await response.json();
+      // Store user info (using email as ID for now since backend returns simple token)
+      setUser({ email: email, token: data.access_token });
 
     } catch (err) {
       setError(err.message);
@@ -67,24 +55,21 @@ export function AuthProvider({ children }) {
       setLoading(true);
       setError(null);
 
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await fetch('http://localhost:8000/users/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-      // Check if user already exists
-      if (MOCK_USERS[email]) {
-        throw new Error('User already exists');
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Signup failed');
       }
 
-      // Create new user (in real app, this would be an API call)
-      const newUser = {
-        id: Object.keys(MOCK_USERS).length + 1,
-        email,
-        name,
-        role: 'user'
-      };
-
-      // Remove password from user object before storing
-      setUser(newUser);
+      // Auto login after signup
+      await login(email, password);
 
     } catch (err) {
       setError(err.message);

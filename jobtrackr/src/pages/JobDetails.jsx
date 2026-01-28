@@ -39,7 +39,6 @@ function JobDetails() {
   const { id } = useParams();
   
   // In a real app, you would fetch the job details using the id
-  console.log('Job ID:', id);
 
   return (
     <Container>

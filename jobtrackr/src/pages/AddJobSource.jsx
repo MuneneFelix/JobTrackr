@@ -126,31 +126,38 @@ const Button = styled.button`
   }
 `;
 
+const validateForm = (values) => {
+  const errors = {};
+  if (!values.title) {
+    errors.title = 'Title is required';
+  }
+  if (!values.url) {
+    errors.url = 'URL is required';
+  } else {
+    try {
+      const url = new URL(values.url);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        errors.url = 'URL must start with http:// or https://';
+      }
+    } catch (_) {
+      errors.url = 'Must be a valid URL';
+    }
+  }
+  if (!values.company) {
+    errors.company = 'Company name is required';
+  }
+  if (!values.jobType) {
+    errors.jobType = 'Job type is required';
+  }
+  if (!values.checkFrequency) {
+    errors.checkFrequency = 'Check frequency is required';
+  }
+  return errors;
+};
+
 function AddJobSource() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
-  const validateForm = (values) => {
-    const errors = {};
-    if (!values.title) {
-      errors.title = 'Title is required';
-    }
-    if (!values.url) {
-      errors.url = 'URL is required';
-    } else if (!/^https?:\/\/.+/.test(values.url)) {
-      errors.url = 'Must be a valid URL';
-    }
-    if (!values.company) {
-      errors.company = 'Company name is required';
-    }
-    if (!values.jobType) {
-      errors.jobType = 'Job type is required';
-    }
-    if (!values.checkFrequency) {
-      errors.checkFrequency = 'Check frequency is required';
-    }
-    return errors;
-  };
 
   const { values, errors, isSubmitting, handleChange, handleSubmit } = useForm(
     {
@@ -168,10 +175,19 @@ function AddJobSource() {
   const handleAddSource = async (formValues) => {
     try {
       setLoading(true);
-      // API call would go here
-      console.log('Form values:', formValues);
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const response = await fetch('http://localhost:8000/sources/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formValues),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add job source');
+      }
+      
       navigate('/urls');
     } catch (error) {
       console.error('Error adding job source:', error);
