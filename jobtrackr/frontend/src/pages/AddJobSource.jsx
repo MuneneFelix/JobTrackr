@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { useForm } from '../hooks/useForm';
-import LoadingSpinner from '../components/common/LoadingSpinner';
+import { useAuth } from '../context/AuthContext';
 
 const Container = styled.div`
   padding: 2rem;
@@ -156,7 +156,8 @@ const validateForm = (values) => {
 };
 
 function AddJobSource() {
-  const [loading, setLoading] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const { authFetch } = useAuth();
   const navigate = useNavigate();
 
   const { values, errors, isSubmitting, handleChange, handleSubmit } = useForm(
@@ -173,32 +174,23 @@ function AddJobSource() {
   );
 
   const handleAddSource = async (formValues) => {
-    try {
-      setLoading(true);
-      
-      const response = await fetch('http://localhost:8000/sources/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formValues),
-      });
+    setSubmitError('');
+    const res = await authFetch('/sources/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: formValues.title,
+        url: formValues.url,
+        check_frequency: formValues.checkFrequency,
+      }),
+    });
 
-      if (!response.ok) {
-        throw new Error('Failed to add job source');
-      }
-      
-      navigate('/urls');
-    } catch (error) {
-      console.error('Error adding job source:', error);
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Failed to add job source');
     }
-  };
 
-  if (loading) {
-    return <LoadingSpinner fullHeight />;
-  }
+    navigate('/urls');
+  };
 
   return (
     <Container>
@@ -209,8 +201,9 @@ function AddJobSource() {
 
       <Form onSubmit={(e) => {
         e.preventDefault();
-        handleSubmit(handleAddSource);
+        handleSubmit(handleAddSource).catch((err) => setSubmitError(err.message));
       }}>
+        {submitError && <ErrorText style={{ marginBottom: '1rem' }}>{submitError}</ErrorText>}
         <FormSection>
           <SectionTitle>Basic Information</SectionTitle>
           <FormGroup>
