@@ -88,11 +88,11 @@ const ScrapeButton = styled.button`
   font-weight: 500;
   border: 1.5px solid var(--primary-teal);
   border-radius: 6px;
-  background: ${p => p.loading ? 'var(--bg-light)' : 'transparent'};
+  background: ${p => p.$loading ? 'var(--bg-light)' : 'transparent'};
   color: var(--primary-teal);
-  cursor: ${p => p.loading ? 'not-allowed' : 'pointer'};
+  cursor: ${p => p.$loading ? 'not-allowed' : 'pointer'};
   transition: all 0.2s;
-  opacity: ${p => p.loading ? 0.6 : 1};
+  opacity: ${p => p.$loading ? 0.6 : 1};
 
   &:hover:not(:disabled) {
     background: var(--primary-teal);
@@ -142,7 +142,7 @@ const JobCard = styled.div`
   border-radius: 10px;
   padding: 1.25rem 1.5rem;
   box-shadow: 0 1px 3px rgba(0,0,0,0.07);
-  border-left: 4px solid ${p => p.isNew ? 'var(--primary-teal)' : 'transparent'};
+  border-left: 4px solid ${p => p.$isNew ? 'var(--primary-teal)' : 'transparent'};
   cursor: pointer;
   transition: box-shadow 0.2s, transform 0.2s;
 
@@ -264,8 +264,8 @@ const ActionBtn = styled.button`
   transition: all 0.15s;
   line-height: 1;
 
-  &:hover { border-color: ${p => p.danger ? '#fc8181' : p.warn ? '#f6ad55' : '#9ae6b4'};
-            background: ${p => p.danger ? '#fff5f5' : p.warn ? '#fffaf0' : '#f0fff4'}; }
+  &:hover { border-color: ${p => p.$danger ? '#fc8181' : p.$warn ? '#f6ad55' : '#9ae6b4'};
+            background: ${p => p.$danger ? '#fff5f5' : p.$warn ? '#fffaf0' : '#f0fff4'}; }
 `;
 
 const ConfirmOverlay = styled.div`
@@ -443,7 +443,7 @@ export default function Jobs() {
           {sources.map((s) => (
             <ScrapeButton
               key={s.id}
-              loading={scraping[s.id]}
+              $loading={scraping[s.id]}
               disabled={scraping[s.id]}
               onClick={() => triggerScrape(s.id)}
             >
@@ -473,7 +473,7 @@ export default function Jobs() {
           {displayed.map((job) => (
             <JobCard
               key={job.id}
-              isNew={job.is_new}
+              $isNew={job.is_new}
               onClick={() => navigate(`/jobs/${job.id}`)}
             >
               <CardTop>
@@ -512,7 +512,7 @@ export default function Jobs() {
                   )}
                   {job.company && (
                     <ActionBtn
-                      warn
+                      $warn
                       title={`Blacklist ${job.company} — won't show their jobs again`}
                       onClick={(e) => { e.stopPropagation(); setConfirm({ type: 'blacklist', job }); }}
                     >
@@ -520,7 +520,7 @@ export default function Jobs() {
                     </ActionBtn>
                   )}
                   <ActionBtn
-                    danger
+                    $danger
                     title="Delete this job"
                     onClick={(e) => { e.stopPropagation(); setConfirm({ type: 'delete', job }); }}
                   >

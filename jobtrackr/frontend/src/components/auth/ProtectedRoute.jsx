@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import { useAuth } from '../../context/AuthContext';
 
-function ProtectedRoute({ children, requireAdmin }) {
+function ProtectedRoute({ children, requireAdmin = false }) {
   const { user } = useAuth();
   const location = useLocation();
 
@@ -22,8 +22,5 @@ ProtectedRoute.propTypes = {
   requireAdmin: PropTypes.bool,
 };
 
-ProtectedRoute.defaultProps = {
-  requireAdmin: false,
-};
 
 export default ProtectedRoute; 

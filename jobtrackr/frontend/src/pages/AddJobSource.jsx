@@ -99,7 +99,7 @@ const Button = styled.button`
   cursor: pointer;
   transition: all 0.3s ease;
 
-  ${props => props.primary ? `
+  ${props => props.$primary ? `
     background: var(--primary-teal);
     color: var(--white);
     border: none;
@@ -308,7 +308,7 @@ function AddJobSource() {
           <Button type="button" onClick={() => navigate('/urls')}>
             Cancel
           </Button>
-          <Button type="submit" primary disabled={isSubmitting}>
+          <Button type="submit" $primary disabled={isSubmitting}>
             {isSubmitting ? 'Adding...' : 'Add Job Source'}
           </Button>
         </ButtonGroup>

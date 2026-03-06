@@ -1,5 +1,6 @@
 import { createContext, useContext, useReducer } from 'react';
 import PropTypes from 'prop-types';
+import { useAuth } from './AuthContext';
 
 const JobContext = createContext(null);
 
@@ -31,12 +32,12 @@ function jobReducer(state, action) {
 
 export function JobProvider({ children }) {
   const [state, dispatch] = useReducer(jobReducer, initialState);
+  const { authFetch } = useAuth();
 
   const fetchJobs = async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      // Replace with actual API call
-      const response = await fetch('/api/jobs');
+      const response = await authFetch('/jobs/');
       const data = await response.json();
       dispatch({ type: 'SET_JOBS', payload: data });
     } catch (error) {

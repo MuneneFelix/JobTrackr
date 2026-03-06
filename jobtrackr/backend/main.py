@@ -11,6 +11,9 @@ import datetime
 import json
 import logging
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import models
 import schemas
@@ -77,7 +80,7 @@ def audit(
             "user": user_email,
             "ip": ip,
             "detail": detail,
-        },
+      },
     )
 
 
@@ -177,9 +180,12 @@ async def lifespan(app: FastAPI):
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="JobTrackr API", lifespan=lifespan)
 
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+_allowed_origins = [o.strip() for o in _raw_origins.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

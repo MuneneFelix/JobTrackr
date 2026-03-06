@@ -37,7 +37,7 @@ const StatCard = styled.div`
   padding: 1.5rem;
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  border-top: 3px solid ${p => p.accent || 'var(--primary-teal)'};
+  border-top: 3px solid ${p => p.$accent || 'var(--primary-teal)'};
   transition: transform 0.2s, box-shadow 0.2s;
 
   &:hover {
@@ -112,11 +112,11 @@ const PanelList = styled.ul`
 const PanelItem = styled.li`
   padding: 0.85rem 1.25rem;
   border-bottom: 1px solid #f7fafc;
-  cursor: ${p => p.clickable ? 'pointer' : 'default'};
+  cursor: ${p => p.$clickable ? 'pointer' : 'default'};
   transition: background 0.15s;
 
   &:last-child { border-bottom: none; }
-  &:hover { background: ${p => p.clickable ? '#f7fafc' : 'transparent'}; }
+  &:hover { background: ${p => p.$clickable ? '#f7fafc' : 'transparent'}; }
 `;
 
 const JobRow = styled.div`
@@ -166,8 +166,8 @@ const StatusPill = styled.span`
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
   font-weight: 600;
-  background: ${p => p.ok ? '#e6f7ee' : '#fff5f5'};
-  color: ${p => p.ok ? 'var(--success)' : 'var(--error)'};
+  background: ${p => p.$ok ? '#e6f7ee' : '#fff5f5'};
+  color: ${p => p.$ok ? 'var(--success)' : 'var(--error)'};
 `;
 
 const EmptyNote = styled.p`
@@ -193,8 +193,8 @@ const ActionBtn = styled(Link)`
   justify-content: center;
   gap: 0.4rem;
   padding: 0.85rem;
-  background: ${p => p.secondary ? 'var(--bg-light)' : 'var(--primary-teal)'};
-  color: ${p => p.secondary ? 'var(--text-dark)' : 'var(--white)'};
+  background: ${p => p.$secondary ? 'var(--bg-light)' : 'var(--primary-teal)'};
+  color: ${p => p.$secondary ? 'var(--text-dark)' : 'var(--white)'};
   border-radius: 8px;
   text-decoration: none;
   font-size: 0.9rem;
@@ -244,19 +244,19 @@ export default function Dashboard() {
       </WelcomeCard>
 
       <StatsGrid>
-        <StatCard accent="var(--primary-teal)">
+        <StatCard $accent="var(--primary-teal)">
           <StatValue>{loading ? '—' : activeSrcs}</StatValue>
           <StatLabel>Active Sources</StatLabel>
         </StatCard>
-        <StatCard accent="#4299e1">
+        <StatCard $accent="#4299e1">
           <StatValue>{loading ? '—' : totalJobs}</StatValue>
           <StatLabel>Total Jobs</StatLabel>
         </StatCard>
-        <StatCard accent="var(--success)">
+        <StatCard $accent="var(--success)">
           <StatValue>{loading ? '—' : newJobs}</StatValue>
           <StatLabel>Unread</StatLabel>
         </StatCard>
-        <StatCard accent={failedSrcs > 0 ? 'var(--error)' : 'var(--success)'}>
+        <StatCard $accent={failedSrcs > 0 ? 'var(--error)' : 'var(--success)'}>
           <StatValue>{loading ? '—' : failedSrcs}</StatValue>
           <StatLabel>Failed Sources</StatLabel>
         </StatCard>
@@ -264,7 +264,7 @@ export default function Dashboard() {
 
       <Actions>
         <ActionBtn to="/urls/add">+ Add Source</ActionBtn>
-        <ActionBtn to="/jobs" secondary="true">Browse Jobs</ActionBtn>
+        <ActionBtn to="/jobs" $secondary>Browse Jobs</ActionBtn>
       </Actions>
 
       <BodyGrid>
@@ -279,7 +279,7 @@ export default function Dashboard() {
             ) : recentJobs.length === 0 ? (
               <EmptyNote>No jobs yet. Trigger a scrape to find some!</EmptyNote>
             ) : recentJobs.map(job => (
-              <PanelItem key={job.id} clickable onClick={() => navigate(`/jobs/${job.id}`)}>
+              <PanelItem key={job.id} $clickable onClick={() => navigate(`/jobs/${job.id}`)}>
                 <JobRow>
                   <span style={{ display: 'flex', alignItems: 'flex-start' }}>
                     {job.is_new && <NewDot />}
@@ -311,7 +311,7 @@ export default function Dashboard() {
               <PanelItem key={src.id}>
                 <SourceRow>
                   <SourceName>{src.name}</SourceName>
-                  <StatusPill ok={src.last_status !== 'failed'}>
+                  <StatusPill $ok={src.last_status !== 'failed'}>
                     {src.last_status || 'pending'}
                   </StatusPill>
                 </SourceRow>
