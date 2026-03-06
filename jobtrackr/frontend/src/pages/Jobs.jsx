@@ -329,6 +329,7 @@ export default function Jobs() {
   const [filter, setFilter] = useState({ sourceId: "", newOnly: false, starredOnly: false });
   const [scraping, setScraping] = useState({});
   const [confirm, setConfirm] = useState(null); // { type: 'delete'|'blacklist', job }
+  const [selected, setSelected] = useState(new Set()); // job IDs selected for apply
 
   useEffect(() => {
     loadData();
@@ -450,6 +451,18 @@ export default function Jobs() {
               {scraping[s.id] ? `Scraping "${s.name}"…` : `↻ Scrape "${s.name}"`}
             </ScrapeButton>
           ))}
+
+          {selected.size > 0 && (
+            <>
+              <Divider />
+              <ScrapeButton
+                style={{ background: 'var(--primary-teal)', color: 'var(--white)', borderColor: 'var(--primary-teal)', fontWeight: 600 }}
+                onClick={() => navigate(`/apply?jobs=${[...selected].join(',')}`)}
+              >
+                Apply to {selected.size} job{selected.size > 1 ? 's' : ''} ✉
+              </ScrapeButton>
+            </>
+          )}
         </Toolbar>
       </PageHeader>
 
@@ -474,12 +487,30 @@ export default function Jobs() {
             <JobCard
               key={job.id}
               $isNew={job.is_new}
+              $selected={selected.has(job.id)}
               onClick={() => navigate(`/jobs/${job.id}`)}
+              style={selected.has(job.id) ? { outline: '2px solid var(--primary-teal)', outlineOffset: '1px' } : {}}
             >
               <CardTop>
-                <div>
-                  <JobTitle>{job.title}</JobTitle>
-                  {job.company && <Company>{job.company}</Company>}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(job.id)}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => {
+                      e.stopPropagation();
+                      setSelected(prev => {
+                        const next = new Set(prev);
+                        e.target.checked ? next.add(job.id) : next.delete(job.id);
+                        return next;
+                      });
+                    }}
+                    style={{ marginTop: '0.2rem', cursor: 'pointer', accentColor: 'var(--primary-teal)', flexShrink: 0 }}
+                  />
+                  <div>
+                    <JobTitle>{job.title}</JobTitle>
+                    {job.company && <Company>{job.company}</Company>}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                   {job.is_new && <NewDot>New</NewDot>}

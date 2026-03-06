@@ -19,6 +19,8 @@ class User(Base):
     blacklisted_companies = Column(Text, default="[]")
 
     sources = relationship("JobSource", back_populates="owner")
+    profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete")
+    applications = relationship("Application", back_populates="user", cascade="all, delete")
 
 
 class JobSource(Base):
@@ -68,3 +70,42 @@ class JobListing(Base):
     source_id = Column(Integer, ForeignKey("job_sources.id"))
 
     source = relationship("JobSource", back_populates="listings")
+    applications = relationship("Application", back_populates="job", cascade="all, delete")
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    full_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    linkedin = Column(String, nullable=True)
+    github = Column(String, nullable=True)
+    skills = Column(Text, default="[]")        # JSON array of strings
+    education = Column(Text, default="[]")     # JSON array of objects
+    experience = Column(Text, default="[]")    # JSON array of objects
+    resume_text = Column(Text, nullable=True)
+    resume_filename = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="profile")
+
+
+class Application(Base):
+    __tablename__ = "applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    job_id = Column(Integer, ForeignKey("job_listings.id"), nullable=False)
+    email_to = Column(String, nullable=True)
+    email_subject = Column(String, nullable=True)
+    email_body = Column(Text, nullable=True)
+    tailored_summary = Column(Text, nullable=True)
+    highlighted_skills = Column(Text, default="[]")  # JSON array
+    status = Column(String, default="draft")           # draft | sent
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="applications")
+    job = relationship("JobListing", back_populates="applications")

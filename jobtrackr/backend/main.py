@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ import datetime
 import json
 import logging
 import os
+import io
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,6 +19,7 @@ load_dotenv()
 import models
 import schemas
 import database
+import ai_service
 from scraper import scrape_source, save_new_jobs, ScraperError
 
 # ── Structured JSON logger ───────────────────────────────────────────────────
@@ -621,3 +623,271 @@ def admin_list_events(
     if user_email:
         query = query.filter(models.SecurityEvent.user_email == user_email)
     return query.order_by(models.SecurityEvent.created_at.desc()).limit(limit).all()
+
+
+# ── User Profile ──────────────────────────────────────────────────────────────
+
+def _get_or_create_profile(db: Session, user_id: int) -> models.UserProfile:
+    profile = db.query(models.UserProfile).filter(
+        models.UserProfile.user_id == user_id
+    ).first()
+    if not profile:
+        profile = models.UserProfile(user_id=user_id)
+        db.add(profile)
+        db.commit()
+        db.refresh(profile)
+    return profile
+
+
+
+@app.get("/users/me/profile", response_model=schemas.UserProfileOut)
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    profile = _get_or_create_profile(db, current_user.id)
+    out = schemas.UserProfileOut(
+        full_name=profile.full_name,
+        phone=profile.phone,
+        location=profile.location,
+        linkedin=profile.linkedin,
+        github=profile.github,
+        skills=json.loads(profile.skills or "[]"),
+        education=json.loads(profile.education or "[]"),
+        experience=json.loads(profile.experience or "[]"),
+        resume_filename=profile.resume_filename,
+        updated_at=profile.updated_at,
+    )
+    return out
+
+
+@app.patch("/users/me/profile", response_model=schemas.UserProfileOut)
+def update_profile(
+    body: schemas.UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    profile = _get_or_create_profile(db, current_user.id)
+    if body.full_name is not None:
+        profile.full_name = body.full_name
+    if body.phone is not None:
+        profile.phone = body.phone
+    if body.location is not None:
+        profile.location = body.location
+    if body.linkedin is not None:
+        profile.linkedin = body.linkedin
+    if body.github is not None:
+        profile.github = body.github
+    if body.skills is not None:
+        profile.skills = json.dumps(body.skills)
+    if body.education is not None:
+        profile.education = json.dumps(body.education)
+    if body.experience is not None:
+        profile.experience = json.dumps(body.experience)
+    profile.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+    return get_profile(db=db, current_user=current_user)
+
+
+@app.post("/users/me/resume", response_model=schemas.UserProfileOut)
+async def upload_resume(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Upload a PDF or DOCX resume; AI extracts profile data automatically."""
+    content = await file.read()
+    filename = file.filename or ""
+    resume_text = ""
+
+    if filename.lower().endswith(".pdf"):
+        try:
+            import pdfplumber
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                resume_text = "\n".join(
+                    page.extract_text() or "" for page in pdf.pages
+                )
+        except Exception as exc:
+            logger.error("PDF extraction failed: %s", exc)
+            raise HTTPException(status_code=422, detail="Could not read PDF file")
+    elif filename.lower().endswith((".docx", ".doc")):
+        try:
+            from docx import Document
+            doc = Document(io.BytesIO(content))
+            resume_text = "\n".join(p.text for p in doc.paragraphs)
+        except Exception as exc:
+            logger.error("DOCX extraction failed: %s", exc)
+            raise HTTPException(status_code=422, detail="Could not read DOCX file")
+    else:
+        # Try plain text fallback
+        try:
+            resume_text = content.decode("utf-8", errors="ignore")
+        except Exception:
+            raise HTTPException(status_code=422, detail="Unsupported file type")
+
+    if not resume_text.strip():
+        raise HTTPException(status_code=422, detail="No text could be extracted from the file")
+
+    parsed = ai_service.parse_resume(resume_text)
+
+    profile = _get_or_create_profile(db, current_user.id)
+    profile.resume_text = resume_text
+    profile.resume_filename = filename
+    if parsed.get("full_name"):
+        profile.full_name = parsed["full_name"]
+    if parsed.get("phone"):
+        profile.phone = parsed["phone"]
+    if parsed.get("location"):
+        profile.location = parsed["location"]
+    if parsed.get("linkedin"):
+        profile.linkedin = parsed["linkedin"]
+    if parsed.get("github"):
+        profile.github = parsed["github"]
+    if parsed.get("skills"):
+        profile.skills = json.dumps(parsed["skills"])
+    if parsed.get("education"):
+        profile.education = json.dumps(parsed["education"])
+    if parsed.get("experience"):
+        profile.experience = json.dumps(parsed["experience"])
+    profile.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+    return get_profile(db=db, current_user=current_user)
+
+
+# ── Applications ──────────────────────────────────────────────────────────────
+
+@app.post("/applications/generate")
+def generate_applications(
+    body: schemas.ApplicationGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Generate AI email drafts + tailored resume summaries for a list of job IDs."""
+    source_ids = [
+        s.id for s in db.query(models.JobSource)
+        .filter(models.JobSource.owner_id == current_user.id).all()
+    ]
+
+    profile = _get_or_create_profile(db, current_user.id)
+    profile_dict = {
+        "full_name": profile.full_name or current_user.email.split("@")[0],
+        "phone": profile.phone,
+        "location": profile.location,
+        "linkedin": profile.linkedin,
+        "github": profile.github,
+        "skills": json.loads(profile.skills or "[]"),
+        "education": json.loads(profile.education or "[]"),
+        "experience": json.loads(profile.experience or "[]"),
+    }
+
+    drafts = []
+    for job_id in body.job_ids:
+        job = db.query(models.JobListing).filter(
+            models.JobListing.id == job_id,
+            models.JobListing.source_id.in_(source_ids),
+        ).first()
+        if not job:
+            continue
+
+        job_dict = {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "description": job.description,
+            "location": job.location,
+        }
+
+        email = ai_service.generate_application_email(job_dict, profile_dict)
+        tailored = ai_service.tailor_resume(job_dict, profile_dict)
+
+        drafts.append({
+            "job_id": job.id,
+            "job_title": job.title,
+            "job_company": job.company,
+            "job_url": job.url,
+            "email_subject": email.get("subject", ""),
+            "email_body": email.get("body", ""),
+            "tailored_summary": tailored.get("summary", ""),
+            "highlighted_skills": tailored.get("highlighted_skills", []),
+        })
+
+    return {"drafts": drafts, "profile": profile_dict}
+
+
+@app.post("/applications/", response_model=list[schemas.ApplicationOut])
+def save_applications(
+    body: schemas.ApplicationSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Save sent/drafted applications to DB."""
+    source_ids = [
+        s.id for s in db.query(models.JobSource)
+        .filter(models.JobSource.owner_id == current_user.id).all()
+    ]
+    saved = []
+    for d in body.drafts:
+        job_id = d.get("job_id")
+        job = db.query(models.JobListing).filter(
+            models.JobListing.id == job_id,
+            models.JobListing.source_id.in_(source_ids),
+        ).first()
+        if not job:
+            continue
+        app_obj = models.Application(
+            user_id=current_user.id,
+            job_id=job_id,
+            email_to=d.get("email_to", ""),
+            email_subject=d.get("email_subject", ""),
+            email_body=d.get("email_body", ""),
+            tailored_summary=d.get("tailored_summary", ""),
+            highlighted_skills=json.dumps(d.get("highlighted_skills", [])),
+            status=d.get("status", "sent"),
+        )
+        db.add(app_obj)
+        db.flush()
+        saved.append(app_obj)
+    db.commit()
+    for a in saved:
+        db.refresh(a)
+    return [
+        schemas.ApplicationOut(
+            id=a.id,
+            job_id=a.job_id,
+            email_subject=a.email_subject,
+            email_body=a.email_body,
+            tailored_summary=a.tailored_summary,
+            highlighted_skills=json.loads(a.highlighted_skills or "[]"),
+            status=a.status,
+            created_at=a.created_at,
+        )
+        for a in saved
+    ]
+
+
+@app.get("/applications/", response_model=list[schemas.ApplicationOut])
+def list_applications(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    apps = (
+        db.query(models.Application)
+        .filter(models.Application.user_id == current_user.id)
+        .order_by(models.Application.created_at.desc())
+        .all()
+    )
+    return [
+        schemas.ApplicationOut(
+            id=a.id,
+            job_id=a.job_id,
+            email_subject=a.email_subject,
+            email_body=a.email_body,
+            tailored_summary=a.tailored_summary,
+            highlighted_skills=json.loads(a.highlighted_skills or "[]"),
+            status=a.status,
+            created_at=a.created_at,
+        )
+        for a in apps
+    ]

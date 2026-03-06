@@ -84,3 +84,62 @@ class JobListing(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── User Profile ──────────────────────────────────────────────────────────────
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    skills: Optional[list] = None
+    education: Optional[list] = None
+    experience: Optional[list] = None
+
+class UserProfileOut(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    location: Optional[str] = None
+    linkedin: Optional[str] = None
+    github: Optional[str] = None
+    skills: list = []
+    education: list = []
+    experience: list = []
+    resume_filename: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ── Applications ──────────────────────────────────────────────────────────────
+
+class ApplicationGenerateRequest(BaseModel):
+    job_ids: list[int]
+
+class ApplicationDraft(BaseModel):
+    job_id: int
+    job_title: str
+    job_company: str
+    email_subject: str
+    email_body: str
+    tailored_summary: str
+    highlighted_skills: list[str]
+
+class ApplicationSaveRequest(BaseModel):
+    drafts: list[dict]
+
+class ApplicationOut(BaseModel):
+    id: int
+    job_id: int
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
+    tailored_summary: Optional[str] = None
+    highlighted_skills: list = []
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

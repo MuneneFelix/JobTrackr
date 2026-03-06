@@ -21,6 +21,7 @@ import AddJobSource from './pages/AddJobSource';
 import Jobs from './pages/Jobs';
 import JobDetails from './pages/JobDetails';
 import Profile from './pages/Profile';
+import Apply from './pages/Apply';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
@@ -80,6 +81,11 @@ function App() {
                 <Route path="/profile" element={
                   <ProtectedRoute>
                     <Profile />
+                  </ProtectedRoute>
+                } />
+                <Route path="/apply" element={
+                  <ProtectedRoute>
+                    <Apply />
                   </ProtectedRoute>
                 } />
               </Route>
