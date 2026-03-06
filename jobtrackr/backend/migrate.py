@@ -19,6 +19,9 @@ migrations = [
     "ALTER TABLE job_listings ADD COLUMN salary TEXT",
     "ALTER TABLE job_listings ADD COLUMN description TEXT",
     "ALTER TABLE job_listings ADD COLUMN posted_date TEXT",
+    # security hardening: refresh token support
+    "ALTER TABLE users ADD COLUMN refresh_token TEXT",
+    "ALTER TABLE users ADD COLUMN refresh_token_expires DATETIME",
 ]
 
 for sql in migrations:

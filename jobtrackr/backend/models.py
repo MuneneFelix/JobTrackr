@@ -15,6 +15,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     reset_token = Column(String, nullable=True, index=True)
     reset_token_expires = Column(DateTime, nullable=True)
+    refresh_token = Column(String, nullable=True)
+    refresh_token_expires = Column(DateTime, nullable=True)
     preferred_keywords = Column(Text, default="[]")
     blacklisted_companies = Column(Text, default="[]")
 

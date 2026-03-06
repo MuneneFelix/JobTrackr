@@ -1,13 +1,14 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 from typing import Optional
+import re
 
 
 class UserBase(BaseModel):
-    email: str
+    email: EmailStr
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=8)
 
 class UserOut(UserBase):
     id: int
@@ -33,21 +34,31 @@ class SecurityEvent(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 class ResetPasswordRequest(BaseModel):
     token: str
-    new_password: str
+    new_password: str = Field(min_length=8)
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str
+    new_password: str = Field(min_length=8)
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 class JobSourceCreate(BaseModel):
     url: str
     name: str
     check_frequency: str = "daily"
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        if not re.match(r"^https?://", v, re.IGNORECASE):
+            raise ValueError("URL must start with http:// or https://")
+        return v
 
 class JobSourceUpdate(BaseModel):
     name: Optional[str] = None

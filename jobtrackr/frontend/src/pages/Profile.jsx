@@ -374,7 +374,8 @@ export default function Profile() {
     try {
       const res = await fetch('/api/users/me/resume', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        credentials: 'include',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
         body: formData,
       });
       const data = await res.json();

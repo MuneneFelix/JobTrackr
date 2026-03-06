@@ -3,14 +3,17 @@ import PropTypes from 'prop-types';
 import { useAuth } from '../../context/AuthContext';
 
 function ProtectedRoute({ children, requireAdmin = false }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
+
+  // Wait for session check before redirecting to avoid flash-of-login
+  if (loading) return null;
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (requireAdmin && user.role !== 'admin') {
+  if (requireAdmin && !user.is_admin) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -1,6 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
@@ -8,10 +12,12 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
 import os
 import io
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,17 +47,30 @@ logger.addHandler(_handler)
 logger.propagate = False
 
 # ── Security ────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required — set it before starting the server")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
+def _sha256(value: str) -> str:
+    """Return a hex SHA-256 digest of value — used to store lookup tokens without exposing plaintext."""
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
 def create_access_token(email: str) -> str:
     expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode({"sub": email, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token() -> str:
+    """Return a new opaque refresh token (plaintext — caller must hash before storing)."""
+    return secrets.token_urlsafe(48)
 
 # ── Audit helper ─────────────────────────────────────────────────────────────
 def audit(
@@ -182,6 +201,11 @@ async def lifespan(app: FastAPI):
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="JobTrackr API", lifespan=lifespan)
 
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
 _allowed_origins = [o.strip() for o in _raw_origins.split(",")]
 
@@ -189,9 +213,29 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
+
+_IS_PROD = os.getenv("ENV", "development").lower() == "production"
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if _IS_PROD:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'"
+    )
+    return response
 
 
 # ── Dependency ───────────────────────────────────────────────────────────────
@@ -204,10 +248,13 @@ def get_db():
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    request: Request = None,
+    request: Request,
     db: Session = Depends(get_db),
+    _bearer: str | None = Depends(OAuth2PasswordBearer(tokenUrl="token", auto_error=False)),
 ) -> models.User:
+    token = request.cookies.get("access_token") or _bearer
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
@@ -231,8 +278,10 @@ def read_root():
 
 
 @app.post("/token")
+@limiter.limit("5/minute")
 async def login(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -247,8 +296,22 @@ async def login(
             detail="wrong password" if user else "email not found",
         )
         raise HTTPException(status_code=400, detail="Incorrect email or password")
+    refresh_tok = create_refresh_token()
+    access_tok = create_access_token(user.email)
+    user.refresh_token = _sha256(refresh_tok)
+    user.refresh_token_expires = datetime.datetime.utcnow() + datetime.timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.commit()
     audit(db, "LOGIN_SUCCESS", request=request, user_email=user.email)
-    return {"access_token": create_access_token(user.email), "token_type": "bearer"}
+
+    _cookie_kwargs = dict(httponly=True, samesite="lax", secure=_IS_PROD)
+    response.set_cookie("access_token", access_tok, max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60, **_cookie_kwargs)
+    response.set_cookie("refresh_token", refresh_tok, max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400, **_cookie_kwargs)
+
+    return {
+        "access_token": access_tok,
+        "refresh_token": refresh_tok,
+        "token_type": "bearer",
+    }
 
 
 @app.post("/users/", response_model=schemas.UserBase)
@@ -266,9 +329,9 @@ def create_user(request: Request, user: schemas.UserCreate, db: Session = Depend
 
 
 # ── Password reset ───────────────────────────────────────────────────────────
-import secrets
 
 @app.post("/auth/forgot-password")
+@limiter.limit("3/minute")
 def forgot_password(
     body: schemas.ForgotPasswordRequest,
     request: Request,
@@ -279,25 +342,25 @@ def forgot_password(
         return {"detail": "If that email is registered you will receive a reset link."}
 
     token = secrets.token_urlsafe(32)
-    user.reset_token = token
+    user.reset_token = _sha256(token)
     user.reset_token_expires = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
     db.commit()
 
-    # TODO: send email in production. Token is returned directly for now (dev only).
-    logger.info("Password reset requested for %s", user.email)
-    return {
-        "detail": "If that email is registered you will receive a reset link.",
-        "dev_token": token,
-    }
+    # TODO: send email in production with reset link containing `token`.
+    # Logged here for dev only — NEVER expose in API response.
+    logger.info("Password reset token for %s (dev only): %s", user.email, token)
+    return {"detail": "If that email is registered you will receive a reset link."}
 
 
 @app.post("/auth/reset-password")
+@limiter.limit("5/minute")
 def reset_password(
     body: schemas.ResetPasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     user = db.query(models.User).filter(
-        models.User.reset_token == body.token
+        models.User.reset_token == _sha256(body.token)
     ).first()
     if not user or user.reset_token_expires < datetime.datetime.utcnow():
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
@@ -320,6 +383,56 @@ def change_password(
     current_user.hashed_password = pwd_context.hash(body.new_password)
     db.commit()
     return {"detail": "Password changed successfully"}
+
+
+@app.get("/auth/me", response_model=schemas.UserOut)
+def get_me(current_user: models.User = Depends(get_current_user)):
+    """Return the currently authenticated user — used for session checks."""
+    return current_user
+
+
+@app.post("/auth/refresh")
+@limiter.limit("10/minute")
+def refresh_access_token(
+    request: Request,
+    body: schemas.RefreshTokenRequest,
+    db: Session = Depends(get_db),
+):
+    """Exchange a valid refresh token for a new access token."""
+    token_hash = _sha256(body.refresh_token)
+    user = db.query(models.User).filter(
+        models.User.refresh_token == token_hash
+    ).first()
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+    if not user or not user.refresh_token_expires or user.refresh_token_expires < now:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    # Rotate: issue a new refresh token on every use
+    new_refresh = create_refresh_token()
+    user.refresh_token = _sha256(new_refresh)
+    user.refresh_token_expires = now + datetime.timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.commit()
+
+    return {
+        "access_token": create_access_token(user.email),
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+    }
+
+
+@app.post("/auth/logout")
+def logout(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Revoke the refresh token and clear auth cookies."""
+    current_user.refresh_token = None
+    current_user.refresh_token_expires = None
+    db.commit()
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return {"detail": "Logged out"}
 
 
 # ── Job Sources ──────────────────────────────────────────────────────────────
@@ -697,7 +810,10 @@ async def upload_resume(
     current_user: models.User = Depends(get_current_user),
 ):
     """Upload a PDF or DOCX resume; AI extracts profile data automatically."""
+    _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
     content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large — maximum size is 10 MB")
     filename = file.filename or ""
     resume_text = ""
 

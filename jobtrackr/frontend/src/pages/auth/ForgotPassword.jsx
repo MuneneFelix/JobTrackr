@@ -153,13 +153,12 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [devToken, setDevToken] = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setDevToken('');
     try {
       const res = await fetch(`${API}/auth/forgot-password`, {
         method: 'POST',
@@ -168,7 +167,7 @@ export default function ForgotPassword() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Request failed');
-      if (data.dev_token) setDevToken(data.dev_token);
+      setSubmitted(true);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -186,7 +185,7 @@ export default function ForgotPassword() {
 
         {error && <ErrorBanner>{error}</ErrorBanner>}
 
-        {!devToken ? (
+        {!submitted ? (
           <form onSubmit={handleSubmit}>
             <FormGroup>
               <Label>Email address</Label>
@@ -204,14 +203,14 @@ export default function ForgotPassword() {
           </form>
         ) : (
           <TokenBox>
-            <TokenLabel>Your reset token</TokenLabel>
-            <TokenValue>{devToken}</TokenValue>
-            <ResetLink to={`/reset-password?token=${devToken}`}>
-              Continue to reset password →
-            </ResetLink>
+            <TokenLabel>Check your email</TokenLabel>
             <DevNote>
-              In production this would be sent to your email.
+              If that email is registered, a password reset link has been sent.
+              Follow the link in the email to set a new password.
             </DevNote>
+            <ResetLink to="/login">
+              Back to sign in →
+            </ResetLink>
           </TokenBox>
         )}
 
