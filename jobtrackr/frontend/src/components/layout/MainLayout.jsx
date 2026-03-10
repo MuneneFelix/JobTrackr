@@ -53,6 +53,9 @@ const Nav = styled.nav`
 // ── Logo ──────────────────────────────────────────────────────────────────────
 
 const Logo = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   font-size: 1.35rem;
   font-weight: 800;
   color: var(--primary-blue);
@@ -376,7 +379,15 @@ function MainLayout() {
     <Shell>
       <Header>
         <Nav>
-          <Logo to="/">Job<span>Trackr</span></Logo>
+          <Logo to="/">
+            <svg width="22" height="22" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect width="32" height="32" rx="7" fill="#1A365D"/>
+              <rect x="5" y="14" width="22" height="13" rx="3" fill="#2C7A7B"/>
+              <path d="M12 14v-3a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3" fill="none" stroke="#81E6D9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="14.5" y="19" width="3" height="4" rx="1.5" fill="rgba(255,255,255,0.45)"/>
+            </svg>
+            Job<span>Trackr</span>
+          </Logo>
 
           {/* Desktop nav */}
           {user && (

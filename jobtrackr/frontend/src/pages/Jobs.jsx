@@ -328,6 +328,7 @@ export default function Jobs() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState({ sourceId: "", newOnly: false, starredOnly: false });
   const [scraping, setScraping] = useState({});
+  const [scrapeTarget, setScrapeTarget] = useState("all");
   const [confirm, setConfirm] = useState(null); // { type: 'delete'|'blacklist', job }
   const [selected, setSelected] = useState(new Set()); // job IDs selected for apply
 
@@ -368,6 +369,16 @@ export default function Jobs() {
       setScraping((s) => ({ ...s, [sourceId]: false }));
     }
   };
+
+  const handleScrape = () => {
+    if (scrapeTarget === "all") {
+      sources.forEach((s) => triggerScrape(s.id));
+    } else {
+      triggerScrape(Number(scrapeTarget));
+    }
+  };
+
+  const isAnyScraping = Object.values(scraping).some(Boolean);
 
   const markRead = async (jobId, e) => {
     e.stopPropagation();
@@ -439,18 +450,28 @@ export default function Jobs() {
             ⭐ Starred
           </CheckboxLabel>
 
-          {sources.length > 0 && <Divider />}
-
-          {sources.map((s) => (
-            <ScrapeButton
-              key={s.id}
-              $loading={scraping[s.id]}
-              disabled={scraping[s.id]}
-              onClick={() => triggerScrape(s.id)}
-            >
-              {scraping[s.id] ? `Scraping "${s.name}"…` : `↻ Scrape "${s.name}"`}
-            </ScrapeButton>
-          ))}
+          {sources.length > 0 && (
+            <>
+              <Divider />
+              <Select
+                value={scrapeTarget}
+                onChange={(e) => setScrapeTarget(e.target.value)}
+                style={{ maxWidth: 200 }}
+              >
+                <option value="all">All sources</option>
+                {sources.map((s) => (
+                  <option key={s.id} value={String(s.id)}>{s.name}</option>
+                ))}
+              </Select>
+              <ScrapeButton
+                $loading={isAnyScraping}
+                disabled={isAnyScraping}
+                onClick={handleScrape}
+              >
+                {isAnyScraping ? "Scraping…" : "↻ Scrape"}
+              </ScrapeButton>
+            </>
+          )}
 
           {selected.size > 0 && (
             <>
