@@ -22,6 +22,19 @@ migrations = [
     # security hardening: refresh token support
     "ALTER TABLE users ADD COLUMN refresh_token TEXT",
     "ALTER TABLE users ADD COLUMN refresh_token_expires DATETIME",
+    # default job sources: is_default flag on user sources
+    "ALTER TABLE job_sources ADD COLUMN is_default BOOLEAN DEFAULT 0",
+    # new table: admin-managed default job sources
+    """CREATE TABLE IF NOT EXISTS default_job_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT,
+        check_frequency TEXT DEFAULT 'daily',
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        created_by_id INTEGER REFERENCES users(id)
+    )""",
 ]
 
 for sql in migrations:

@@ -59,6 +59,7 @@ function AdminLayout() {
           <li><MenuItem to="/admin/users">Users</MenuItem></li>
           <li><MenuItem to="/admin/urls">URLs</MenuItem></li>
           <li><MenuItem to="/admin/jobs">Jobs</MenuItem></li>
+          <li><MenuItem to="/admin/default-sources">Default Sources</MenuItem></li>
           <li><MenuItem to="/admin/analytics">Analytics</MenuItem></li>
           <li><MenuItem to="/admin/settings">Settings</MenuItem></li>
         </SidebarMenu>

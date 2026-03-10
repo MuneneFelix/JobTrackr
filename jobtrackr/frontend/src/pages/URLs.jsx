@@ -346,6 +346,20 @@ const ErrorBanner = styled.div`
   font-size: 0.875rem;
 `;
 
+const DefaultBadge = styled.span`
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #e8f4fd;
+  color: #2b6cb0;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+`;
+
 const EmptyState = styled.div`
   text-align: center;
   padding: 5rem 2rem;
@@ -540,7 +554,10 @@ export default function URLs() {
               <Card key={source.id} active={source.is_active} failed={failed}>
                 <CardHeader>
                   <div>
-                    <SourceName>{source.name}</SourceName>
+                    <SourceName>
+                      {source.name}
+                      {source.is_default && <DefaultBadge>Default</DefaultBadge>}
+                    </SourceName>
                     <SourceUrl href={source.url} target="_blank" rel="noopener noreferrer">
                       {source.url}
                     </SourceUrl>

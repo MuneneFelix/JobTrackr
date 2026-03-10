@@ -69,6 +69,7 @@ class JobSourceUpdate(BaseModel):
 class JobSource(JobSourceCreate):
     id: int
     is_active: bool
+    is_default: bool = False
     created_at: datetime
     last_checked: Optional[datetime] = None
     last_status: Optional[str] = None
@@ -77,6 +78,47 @@ class JobSource(JobSourceCreate):
 
     class Config:
         from_attributes = True
+
+
+# ── Default Job Sources (Admin-managed) ───────────────────────────────────────
+
+class DefaultJobSourceCreate(BaseModel):
+    url: str
+    name: str
+    category: Optional[str] = None
+    check_frequency: str = "daily"
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        if not re.match(r"^https?://", v, re.IGNORECASE):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
+class DefaultJobSourceUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    category: Optional[str] = None
+    check_frequency: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class DefaultJobSourceOut(DefaultJobSourceCreate):
+    id: int
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class DefaultJobSourceBulk(BaseModel):
+    sources: list[DefaultJobSourceCreate]
+
+
+# ── Admin User Management ──────────────────────────────────────────────────────
+
+class UserAdminUpdate(BaseModel):
+    is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 
 class JobListing(BaseModel):

@@ -324,6 +324,20 @@ def create_user(request: Request, user: schemas.UserCreate, db: Session = Depend
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    # Auto-populate active default sources for every new user
+    defaults = db.query(models.DefaultJobSource).filter(
+        models.DefaultJobSource.is_active == True
+    ).all()
+    for d in defaults:
+        db.add(models.JobSource(
+            url=d.url,
+            name=d.name,
+            check_frequency=d.check_frequency,
+            is_default=True,
+            owner_id=db_user.id,
+        ))
+    if defaults:
+        db.commit()
     audit(db, "REGISTER", request=request, user_email=user.email)
     return db_user
 
@@ -736,6 +750,140 @@ def admin_list_events(
     if user_email:
         query = query.filter(models.SecurityEvent.user_email == user_email)
     return query.order_by(models.SecurityEvent.created_at.desc()).limit(limit).all()
+
+
+# ── Admin: User Management ────────────────────────────────────────────────────
+
+@app.get("/admin/users/", response_model=list[schemas.UserOut])
+def admin_list_users(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail="GET /admin/users/")
+        raise HTTPException(status_code=403, detail="Admins only")
+    return db.query(models.User).order_by(models.User.created_at.desc()).all()
+
+
+@app.patch("/admin/users/{user_id}", response_model=schemas.UserOut)
+def admin_update_user(
+    user_id: int,
+    body: schemas.UserAdminUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail=f"PATCH /admin/users/{user_id}")
+        raise HTTPException(status_code=403, detail="Admins only")
+    target = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Prevent admin from demoting themselves
+    if target.id == current_user.id and body.is_admin is False:
+        raise HTTPException(status_code=400, detail="Cannot remove your own admin rights")
+    if body.is_admin is not None:
+        target.is_admin = body.is_admin
+    if body.is_active is not None:
+        target.is_active = body.is_active
+    db.commit()
+    db.refresh(target)
+    return target
+
+
+# ── Admin: Default Job Sources ────────────────────────────────────────────────
+
+@app.get("/admin/default-sources/", response_model=list[schemas.DefaultJobSourceOut])
+def admin_list_default_sources(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail="GET /admin/default-sources/")
+        raise HTTPException(status_code=403, detail="Admins only")
+    return db.query(models.DefaultJobSource).order_by(
+        models.DefaultJobSource.category, models.DefaultJobSource.name
+    ).all()
+
+
+@app.post("/admin/default-sources/", response_model=schemas.DefaultJobSourceOut)
+def admin_create_default_source(
+    source: schemas.DefaultJobSourceCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail="POST /admin/default-sources/")
+        raise HTTPException(status_code=403, detail="Admins only")
+    db_source = models.DefaultJobSource(**source.dict(), created_by_id=current_user.id)
+    db.add(db_source)
+    db.commit()
+    db.refresh(db_source)
+    return db_source
+
+
+@app.post("/admin/default-sources/bulk", response_model=list[schemas.DefaultJobSourceOut])
+def admin_bulk_create_default_sources(
+    body: schemas.DefaultJobSourceBulk,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail="POST /admin/default-sources/bulk")
+        raise HTTPException(status_code=403, detail="Admins only")
+    created = []
+    for s in body.sources:
+        db_source = models.DefaultJobSource(**s.dict(), created_by_id=current_user.id)
+        db.add(db_source)
+        db.flush()
+        created.append(db_source)
+    db.commit()
+    for s in created:
+        db.refresh(s)
+    return created
+
+
+@app.patch("/admin/default-sources/{source_id}", response_model=schemas.DefaultJobSourceOut)
+def admin_update_default_source(
+    source_id: int,
+    body: schemas.DefaultJobSourceUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail=f"PATCH /admin/default-sources/{source_id}")
+        raise HTTPException(status_code=403, detail="Admins only")
+    source = db.query(models.DefaultJobSource).filter(models.DefaultJobSource.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Default source not found")
+    for field, value in body.dict(exclude_unset=True).items():
+        setattr(source, field, value)
+    db.commit()
+    db.refresh(source)
+    return source
+
+
+@app.delete("/admin/default-sources/{source_id}")
+def admin_delete_default_source(
+    source_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail=f"DELETE /admin/default-sources/{source_id}")
+        raise HTTPException(status_code=403, detail="Admins only")
+    source = db.query(models.DefaultJobSource).filter(models.DefaultJobSource.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Default source not found")
+    db.delete(source)
+    db.commit()
+    return {"detail": "Deleted"}
 
 
 # ── User Profile ──────────────────────────────────────────────────────────────

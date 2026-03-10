@@ -30,6 +30,7 @@ import AdminURLs from './pages/admin/URLs';
 import AdminJobs from './pages/admin/Jobs';
 import AdminAnalytics from './pages/admin/Analytics';
 import AdminSettings from './pages/admin/Settings';
+import AdminDefaultSources from './pages/admin/DefaultSources';
 
 // Protected Route Component
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -102,6 +103,7 @@ function App() {
                 <Route path="jobs" element={<AdminJobs />} />
                 <Route path="analytics" element={<AdminAnalytics />} />
                 <Route path="settings" element={<AdminSettings />} />
+                <Route path="default-sources" element={<AdminDefaultSources />} />
               </Route>
             </Routes>
           </Router>

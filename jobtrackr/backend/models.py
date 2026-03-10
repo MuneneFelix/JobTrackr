@@ -33,6 +33,7 @@ class JobSource(Base):
     name = Column(String, nullable=False)
     check_frequency = Column(String, default="daily")  # hourly | daily | weekly
     is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)        # True = auto-populated from DefaultJobSource
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     last_checked = Column(DateTime, nullable=True)
     last_status = Column(String, nullable=True)       # "success" | "failed"
@@ -41,6 +42,20 @@ class JobSource(Base):
 
     owner = relationship("User", back_populates="sources")
     listings = relationship("JobListing", back_populates="source", cascade="all, delete")
+
+
+class DefaultJobSource(Base):
+    """Admin-managed pool of sources auto-copied to every new user on registration."""
+    __tablename__ = "default_job_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    url = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=True)           # e.g. "UN Agencies", "Kenya Job Boards"
+    check_frequency = Column(String, default="daily")  # hourly | daily | weekly
+    is_active = Column(Boolean, default=True)          # False = excluded from new registrations
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
 class SecurityEvent(Base):
