@@ -371,7 +371,7 @@ function BulkModal({ onClose, onDone }) {
     }
     setLoading(true);
     try {
-      const res = await authFetch('/api/admin/default-sources/bulk', {
+      const res = await authFetch('/admin/default-sources/bulk', {
         method: 'POST',
         body: JSON.stringify({ sources: parsed }),
       });
@@ -465,7 +465,7 @@ function AddModal({ onClose, onDone }) {
     }
     setLoading(true);
     try {
-      const res = await authFetch('/api/admin/default-sources/', {
+      const res = await authFetch('/admin/default-sources/', {
         method: 'POST',
         body: JSON.stringify(form),
       });
@@ -546,7 +546,7 @@ export default function DefaultSources() {
 
   const loadSources = () => {
     setLoading(true);
-    authFetch('/api/admin/default-sources/')
+    authFetch('/admin/default-sources/')
       .then(res => { if (!res.ok) throw new Error('Failed to load'); return res.json(); })
       .then(setSources)
       .catch(e => setError(e.message))
@@ -555,7 +555,7 @@ export default function DefaultSources() {
 
   const handleToggle = async (source) => {
     try {
-      const res = await authFetch(`/api/admin/default-sources/${source.id}`, {
+      const res = await authFetch(`/admin/default-sources/${source.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ is_active: !source.is_active }),
       });
@@ -570,7 +570,7 @@ export default function DefaultSources() {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this default source?')) return;
     try {
-      const res = await authFetch(`/api/admin/default-sources/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/admin/default-sources/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setSources(prev => prev.filter(s => s.id !== id));
     } catch (e) {
@@ -588,7 +588,7 @@ export default function DefaultSources() {
     if (!window.confirm('Push all active default sources to every existing user who doesn\'t have them yet?')) return;
     setPushing(true); setPushMsg(''); setError('');
     try {
-      const res = await authFetch('/api/admin/default-sources/push-to-all', { method: 'POST' });
+      const res = await authFetch('/admin/default-sources/push-to-all', { method: 'POST' });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Push failed'); }
       const data = await res.json();
       setPushMsg(`Done — added ${data.added} source(s) across ${data.users_updated} user(s).`);

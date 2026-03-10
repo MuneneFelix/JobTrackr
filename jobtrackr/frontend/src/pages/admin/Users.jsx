@@ -130,7 +130,7 @@ export default function Users() {
 
   const loadUsers = () => {
     setLoading(true);
-    authFetch('/api/admin/users/')
+    authFetch('/admin/users/')
       .then(res => { if (!res.ok) throw new Error('Failed to load users'); return res.json(); })
       .then(setUsers)
       .catch(e => setError(e.message))
@@ -139,7 +139,7 @@ export default function Users() {
 
   const handleToggle = async (userId, field, currentValue) => {
     try {
-      const res = await authFetch(`/api/admin/users/${userId}`, {
+      const res = await authFetch(`/admin/users/${userId}`, {
         method: 'PATCH',
         body: JSON.stringify({ [field]: !currentValue }),
       });
