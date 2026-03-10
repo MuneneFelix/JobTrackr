@@ -82,7 +82,15 @@ def audit(
     detail: str | None = None,
 ):
     """Write one row to security_events and emit a structured log line."""
-    ip = request.client.host if request and request.client else None
+    # Prefer X-Forwarded-For / X-Real-IP set by the reverse proxy (Caddy/Nginx)
+    # in front of Docker; fall back to the raw socket peer (Docker bridge IP).
+    if request:
+        xff = request.headers.get("X-Forwarded-For")
+        ip  = xff.split(",")[0].strip() if xff else (
+              request.headers.get("X-Real-IP") or
+              (request.client.host if request.client else None))
+    else:
+        ip = None
     ua = request.headers.get("user-agent") if request else None
 
     db.add(models.SecurityEvent(
