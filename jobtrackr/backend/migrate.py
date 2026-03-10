@@ -40,6 +40,15 @@ migrations = [
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         created_by_id INTEGER REFERENCES users(id)
     )""",
+    # scrape result cache — shared across all users to avoid duplicate API calls
+    """CREATE TABLE IF NOT EXISTS scrape_cache (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        url        TEXT     NOT NULL,
+        scraped_at DATETIME DEFAULT (datetime('now')),
+        jobs_json  TEXT     NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_scrape_cache_url        ON scrape_cache (url)",
+    "CREATE INDEX IF NOT EXISTS ix_scrape_cache_scraped_at ON scrape_cache (scraped_at)",
 ]
 
 for sql in migrations:

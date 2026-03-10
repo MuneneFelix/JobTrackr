@@ -58,6 +58,16 @@ class DefaultJobSource(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
+class ScrapeCache(Base):
+    """Shared scrape result cache keyed by URL — shared across all users to avoid duplicate API calls."""
+    __tablename__ = "scrape_cache"
+
+    id         = Column(Integer, primary_key=True)
+    url        = Column(String, nullable=False, index=True)
+    scraped_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    jobs_json  = Column(Text, nullable=False)   # JSON-serialised list[dict]
+
+
 class SecurityEvent(Base):
     __tablename__ = "security_events"
 

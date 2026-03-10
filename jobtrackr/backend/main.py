@@ -109,6 +109,45 @@ def audit(
 models.Base.metadata.create_all(bind=database.engine)
 
 
+# ── Scrape cache helpers ─────────────────────────────────────────────────────
+
+FREQ_HOURS: dict[str, int] = {"hourly": 1, "daily": 24, "weekly": 168}
+
+
+def _get_cached_jobs(db, url: str, freq: str) -> list[dict] | None:
+    """Return cached jobs if a fresh scrape for this URL exists within the frequency window."""
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(
+        hours=FREQ_HOURS.get(freq or "daily", 24)
+    )
+    row = (
+        db.query(models.ScrapeCache)
+        .filter(
+            models.ScrapeCache.url == url,
+            models.ScrapeCache.scraped_at >= cutoff,
+        )
+        .order_by(models.ScrapeCache.scraped_at.desc())
+        .first()
+    )
+    return json.loads(row.jobs_json) if row else None
+
+
+def _store_cache(db, url: str, jobs: list[dict]) -> None:
+    """Save fresh scrape results and prune old entries (keep ≤3 per URL)."""
+    db.add(models.ScrapeCache(url=url, jobs_json=json.dumps(jobs)))
+    db.flush()  # assign id so the ORDER BY below is stable
+    # Prune to keep only the 3 most recent entries for this URL
+    old_rows = (
+        db.query(models.ScrapeCache)
+        .filter(models.ScrapeCache.url == url)
+        .order_by(models.ScrapeCache.scraped_at.desc())
+        .offset(3)
+        .all()
+    )
+    for row in old_rows:
+        db.delete(row)
+    db.commit()
+
+
 # ── Scheduler / scraping task ───────────────────────────────────────────────
 def run_scrape_for_source(source_id: int):
     """Synchronous wrapper called by APScheduler for a single source."""
@@ -127,9 +166,18 @@ def run_scrape_for_source(source_id: int):
         try:
             owner = db.query(models.User).filter(models.User.id == source.owner_id).first()
             blacklisted = json.loads(owner.blacklisted_companies or "[]") if owner else []
-            keywords = json.loads(owner.preferred_keywords or "[]") if owner else []
 
-            jobs = asyncio.run(scrape_source(source.url, preferred_keywords=keywords))
+            # ── Cross-user scrape cache ──────────────────────────────────────
+            cached = _get_cached_jobs(db, source.url, source.check_frequency)
+            if cached is not None:
+                jobs = cached
+                logger.info("Cache HIT for source %s (%s) — %d jobs", source.id, source.url, len(jobs))
+            else:
+                # keywords only reorder AI output, not filter — safe to omit for shared cache
+                jobs = asyncio.run(scrape_source(source.url))
+                _store_cache(db, source.url, jobs)
+                logger.info("Cache MISS for source %s (%s) — scraped %d jobs", source.id, source.url, len(jobs))
+
             inserted = save_new_jobs(db, source.id, jobs, blacklisted_companies=blacklisted)
 
             source.last_checked = datetime.datetime.utcnow()
@@ -529,10 +577,15 @@ def update_job_source(
 def trigger_scrape(
     source_id: int,
     background_tasks: BackgroundTasks,
+    force: bool = False,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Manually trigger an immediate scrape for a source."""
+    """Manually trigger an immediate scrape for a source.
+
+    Skips if the source was already checked within its frequency window
+    (unless force=true is passed as a query parameter).
+    """
     source = db.query(models.JobSource).filter(
         models.JobSource.id == source_id,
         models.JobSource.owner_id == current_user.id,
@@ -540,8 +593,22 @@ def trigger_scrape(
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
+    # Per-user dedup: skip if already scraped within the frequency window
+    if not force and source.last_checked:
+        freq_hours = FREQ_HOURS.get(source.check_frequency or "daily", 24)
+        elapsed_h = (datetime.datetime.utcnow() - source.last_checked).total_seconds() / 3600
+        if elapsed_h < freq_hours:
+            remaining_h = freq_hours - elapsed_h
+            remaining_str = (
+                f"{int(remaining_h * 60)}m" if remaining_h < 1 else f"{remaining_h:.1f}h"
+            )
+            return {
+                "skipped": True,
+                "reason": f"Already scraped ({source.check_frequency or 'daily'}). Next due in {remaining_str}.",
+            }
+
     background_tasks.add_task(run_scrape_for_source, source_id)
-    return {"detail": f"Scrape triggered for source {source_id}"}
+    return {"detail": f"Scrape triggered for source {source_id}", "skipped": False}
 
 
 # ── Jobs ─────────────────────────────────────────────────────────────────────

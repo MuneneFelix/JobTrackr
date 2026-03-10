@@ -333,6 +333,7 @@ export default function Jobs() {
     starredOnly: false,
   });
   const [scraping, setScraping] = useState({});
+  const [skipped, setSkipped]   = useState({});   // sourceId → reason string (clears after 4s)
   const [scrapeTarget, setScrapeTarget] = useState("all");
   const [confirm, setConfirm] = useState(null); // { type: 'delete'|'blacklist', job }
   const [selected, setSelected] = useState(new Set()); // job IDs selected for apply
@@ -366,8 +367,14 @@ export default function Jobs() {
   const triggerScrape = async (sourceId) => {
     setScraping((s) => ({ ...s, [sourceId]: true }));
     try {
-      await authFetch(`/sources/${sourceId}/scrape`, { method: "POST" });
-      setTimeout(loadData, 5_000);
+      const res = await authFetch(`/sources/${sourceId}/scrape`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (data.skipped) {
+        setSkipped((s) => ({ ...s, [sourceId]: data.reason }));
+        setTimeout(() => setSkipped((s) => { const n = { ...s }; delete n[sourceId]; return n; }), 4000);
+      } else {
+        setTimeout(loadData, 5_000);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -475,6 +482,13 @@ export default function Jobs() {
               >
                 {isAnyScraping ? "Scraping…" : "↻ Scrape"}
               </ScrapeButton>
+              {Object.keys(skipped).length > 0 && (
+                <span style={{ fontSize: '0.78rem', color: 'var(--primary-teal)', whiteSpace: 'nowrap' }}>
+                  ✓ {Object.keys(skipped).length === 1
+                    ? Object.values(skipped)[0]
+                    : `${Object.keys(skipped).length} sources already up to date`}
+                </span>
+              )}
             </>
           )}
 

@@ -364,6 +364,15 @@ const ViewJobsBtn = styled(RowBtn)`
   &:hover { background: var(--primary-teal); color: white; }
 `;
 
+const SkipMsg = styled.span`
+  font-size: 0.72rem;
+  color: var(--primary-teal);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
 // ── Edit Modal ────────────────────────────────────────────────────────────────
 
 const Overlay = styled.div`
@@ -600,7 +609,7 @@ function EditModal({ source, onClose, onSave, onDelete }) {
 
 // ── List section ──────────────────────────────────────────────────────────────
 
-function ListSection({ sources, variant, label, scraping, onScrape, onEdit, onViewJobs }) {
+function ListSection({ sources, variant, label, scraping, skipped, onScrape, onEdit, onViewJobs }) {
   if (sources.length === 0) return null;
 
   const dotVariant = variant === 'pending' ? 'pending' : variant;
@@ -638,6 +647,7 @@ function ListSection({ sources, variant, label, scraping, onScrape, onEdit, onVi
           </RowMeta>
 
           <RowActions>
+            {skipped[s.id] && <SkipMsg title={skipped[s.id]}>{skipped[s.id]}</SkipMsg>}
             <ViewJobsBtn onClick={() => onViewJobs(s.id)}>
               💼 Jobs
             </ViewJobsBtn>
@@ -664,6 +674,7 @@ export default function URLs() {
   const [syncing, setSyncing]       = useState(false);
   const [syncMsg, setSyncMsg]       = useState('');
   const [scraping, setScraping]     = useState({});
+  const [skipped, setSkipped]       = useState({});   // id → reason string (clears after 4s)
   const [editSource, setEditSource] = useState(null);
 
   useEffect(() => { loadSources(); }, []);
@@ -713,8 +724,14 @@ export default function URLs() {
   const handleScrape = async (id) => {
     setScraping(s => ({ ...s, [id]: true }));
     try {
-      await authFetch(`/sources/${id}/scrape`, { method: 'POST' });
-      setTimeout(loadSources, 5_000);
+      const res = await authFetch(`/sources/${id}/scrape`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (data.skipped) {
+        setSkipped(s => ({ ...s, [id]: data.reason }));
+        setTimeout(() => setSkipped(s => { const n = { ...s }; delete n[id]; return n; }), 4000);
+      } else {
+        setTimeout(loadSources, 5_000);
+      }
     } finally {
       setScraping(s => ({ ...s, [id]: false }));
     }
@@ -769,6 +786,7 @@ export default function URLs() {
             variant="failed"
             label="Failed"
             scraping={scraping}
+            skipped={skipped}
             onScrape={handleScrape}
             onEdit={setEditSource}
             onViewJobs={handleViewJobs}
@@ -778,6 +796,7 @@ export default function URLs() {
             variant="ok"
             label="Successful"
             scraping={scraping}
+            skipped={skipped}
             onScrape={handleScrape}
             onEdit={setEditSource}
             onViewJobs={handleViewJobs}
@@ -787,6 +806,7 @@ export default function URLs() {
             variant="pending"
             label="Not yet scraped"
             scraping={scraping}
+            skipped={skipped}
             onScrape={handleScrape}
             onEdit={setEditSource}
             onViewJobs={handleViewJobs}
@@ -847,8 +867,9 @@ export default function URLs() {
                   <ActionBtn
                     disabled={scraping[source.id]}
                     onClick={() => handleScrape(source.id)}
+                    title={skipped[source.id] || undefined}
                   >
-                    {scraping[source.id] ? 'Scraping…' : '↻ Scrape'}
+                    {scraping[source.id] ? 'Scraping…' : skipped[source.id] ? '✓ Up to date' : '↻ Scrape'}
                   </ActionBtn>
                 </CardActions>
               </Card>
