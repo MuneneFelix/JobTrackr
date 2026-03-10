@@ -886,6 +886,72 @@ def admin_delete_default_source(
     return {"detail": "Deleted"}
 
 
+@app.post("/admin/default-sources/push-to-all")
+def admin_push_defaults_to_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Push all active default sources to every existing user who doesn't have them yet."""
+    if not current_user.is_admin:
+        audit(db, "UNAUTHORIZED", request=request, user_email=current_user.email, detail="POST /admin/default-sources/push-to-all")
+        raise HTTPException(status_code=403, detail="Admins only")
+    defaults = db.query(models.DefaultJobSource).filter(models.DefaultJobSource.is_active == True).all()
+    if not defaults:
+        return {"added": 0, "users_updated": 0}
+    users = db.query(models.User).filter(models.User.is_active == True).all()
+    total_added = 0
+    users_updated = 0
+    for user in users:
+        existing_urls = {
+            s.url for s in db.query(models.JobSource)
+            .filter(models.JobSource.owner_id == user.id).all()
+        }
+        added_for_user = 0
+        for d in defaults:
+            if d.url not in existing_urls:
+                db.add(models.JobSource(
+                    url=d.url, name=d.name,
+                    check_frequency=d.check_frequency,
+                    is_default=True,
+                    owner_id=user.id,
+                ))
+                added_for_user += 1
+        if added_for_user:
+            total_added += added_for_user
+            users_updated += 1
+    db.commit()
+    return {"added": total_added, "users_updated": users_updated}
+
+
+# ── User: Sync default sources ────────────────────────────────────────────────
+
+@app.post("/sources/sync-defaults")
+def sync_default_sources(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Pull any active default sources the current user doesn't have yet."""
+    defaults = db.query(models.DefaultJobSource).filter(models.DefaultJobSource.is_active == True).all()
+    existing_urls = {
+        s.url for s in db.query(models.JobSource)
+        .filter(models.JobSource.owner_id == current_user.id).all()
+    }
+    added = 0
+    for d in defaults:
+        if d.url not in existing_urls:
+            db.add(models.JobSource(
+                url=d.url, name=d.name,
+                check_frequency=d.check_frequency,
+                is_default=True,
+                owner_id=current_user.id,
+            ))
+            added += 1
+    if added:
+        db.commit()
+    return {"added": added}
+
+
 # ── User Profile ──────────────────────────────────────────────────────────────
 
 def _get_or_create_profile(db: Session, user_id: int) -> models.UserProfile:

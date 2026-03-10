@@ -1,6 +1,11 @@
+import os
 import sqlite3
 
-conn = sqlite3.connect('jobtrackr.db')
+# Parse path from DATABASE_URL env var (e.g. sqlite:////app/data/jobtrackr.db)
+_db_url = os.getenv("DATABASE_URL", "sqlite:///./jobtrackr.db")
+_db_path = _db_url.replace("sqlite:////", "/").replace("sqlite:///", "")
+
+conn = sqlite3.connect(_db_path)
 c = conn.cursor()
 
 migrations = [

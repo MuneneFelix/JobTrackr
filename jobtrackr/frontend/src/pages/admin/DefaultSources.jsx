@@ -293,11 +293,54 @@ const EmptyState = styled.div`
   h3 { color: var(--text-dark); }
 `;
 
+// ── Tab styles ────────────────────────────────────────────────────────────────
+
+const TabRow = styled.div`
+  display: flex;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 1rem;
+`;
+
+const Tab = styled.button`
+  padding: 0.6rem 1.1rem;
+  border: none;
+  background: none;
+  font-size: 0.875rem;
+  font-weight: ${p => p.active ? '700' : '400'};
+  color: ${p => p.active ? 'var(--primary-teal)' : 'var(--text-light)'};
+  border-bottom: 2px solid ${p => p.active ? 'var(--primary-teal)' : 'transparent'};
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  &:hover { color: var(--primary-teal); }
+`;
+
+const FileDropZone = styled.label`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  border: 2px dashed #cbd5e0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: ${p => p.hasFile ? '#f0fff4' : '#fafbfc'};
+  border-color: ${p => p.hasFile ? '#9ae6b4' : '#cbd5e0'};
+  text-align: center;
+  &:hover { border-color: var(--primary-teal); background: #f0fdfd; }
+  input { display: none; }
+  span { font-size: 0.875rem; color: var(--text-light); margin-top: 0.4rem; }
+  strong { font-size: 0.95rem; color: var(--text-dark); }
+`;
+
 // ── Bulk Upload Modal ──────────────────────────────────────────────────────────
 
 function BulkModal({ onClose, onDone }) {
   const { authFetch } = useAuth();
+  const [tab, setTab] = useState('paste');   // 'paste' | 'file'
   const [json, setJson] = useState('');
+  const [fileName, setFileName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -306,6 +349,15 @@ function BulkModal({ onClose, onDone }) {
     { name: 'ReliefWeb Kenya', url: 'https://reliefweb.int/jobs?advanced-search=(C131)', category: 'Global Aggregators', check_frequency: 'daily' },
     { name: 'UNDP Kenya', url: 'https://www.undp.org/kenya/jobs', category: 'UN Agencies', check_frequency: 'daily' },
   ], null, 2);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => setJson(ev.target.result);
+    reader.readAsText(file);
+  };
 
   const handleUpload = async () => {
     setError(''); setSuccess('');
@@ -329,7 +381,7 @@ function BulkModal({ onClose, onDone }) {
       }
       const data = await res.json();
       setSuccess(`Successfully added ${data.length} sources.`);
-      setJson('');
+      setJson(''); setFileName('');
       onDone();
     } catch (e) {
       setError(e.message);
@@ -348,22 +400,48 @@ function BulkModal({ onClose, onDone }) {
         <ModalBody>
           {error && <ErrorBanner>{error}</ErrorBanner>}
           {success && <SuccessBanner>{success}</SuccessBanner>}
-          <FormGroup>
-            <Label>Paste JSON Array</Label>
-            <Textarea
-              value={json}
-              onChange={e => setJson(e.target.value)}
-              placeholder={EXAMPLE}
-            />
-            <HintText>
-              Each item must have: <code>name</code>, <code>url</code>. Optional: <code>category</code>, <code>check_frequency</code> (hourly/daily/weekly).
-            </HintText>
-          </FormGroup>
+
+          <TabRow>
+            <Tab active={tab === 'paste'} onClick={() => setTab('paste')}>Paste JSON</Tab>
+            <Tab active={tab === 'file'} onClick={() => setTab('file')}>Upload JSON File</Tab>
+          </TabRow>
+
+          {tab === 'paste' ? (
+            <FormGroup>
+              <Label>Paste JSON Array</Label>
+              <Textarea
+                value={json}
+                onChange={e => setJson(e.target.value)}
+                placeholder={EXAMPLE}
+              />
+            </FormGroup>
+          ) : (
+            <FormGroup>
+              <FileDropZone hasFile={!!fileName}>
+                <input type="file" accept=".json,application/json" onChange={handleFileChange} />
+                {fileName ? (
+                  <>
+                    <strong>✓ {fileName}</strong>
+                    <span>Click to change file</span>
+                  </>
+                ) : (
+                  <>
+                    <strong>Click to select a JSON file</strong>
+                    <span>or drag and drop here</span>
+                  </>
+                )}
+              </FileDropZone>
+            </FormGroup>
+          )}
+
+          <HintText>
+            Each item needs: <code>name</code>, <code>url</code>. Optional: <code>category</code>, <code>check_frequency</code> (hourly/daily/weekly).
+          </HintText>
         </ModalBody>
         <ModalFooter>
           <Btn secondary onClick={onClose}>Cancel</Btn>
           <Btn onClick={handleUpload} disabled={loading || !json.trim()}>
-            {loading ? 'Uploading…' : 'Upload'}
+            {loading ? 'Uploading…' : `Upload${json ? ` (${(() => { try { return JSON.parse(json).length; } catch { return '?'; } })()})` : ''}`}
           </Btn>
         </ModalFooter>
       </Modal>
@@ -457,6 +535,8 @@ export default function DefaultSources() {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pushMsg, setPushMsg] = useState('');
+  const [pushing, setPushing] = useState(false);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [showBulk, setShowBulk] = useState(false);
@@ -504,6 +584,21 @@ export default function DefaultSources() {
     return matchSearch && matchCat;
   });
 
+  const handlePushToAll = async () => {
+    if (!window.confirm('Push all active default sources to every existing user who doesn\'t have them yet?')) return;
+    setPushing(true); setPushMsg(''); setError('');
+    try {
+      const res = await authFetch('/api/admin/default-sources/push-to-all', { method: 'POST' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Push failed'); }
+      const data = await res.json();
+      setPushMsg(`Done — added ${data.added} source(s) across ${data.users_updated} user(s).`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPushing(false);
+    }
+  };
+
   const activeCount = sources.filter(s => s.is_active).length;
 
   return (
@@ -512,7 +607,10 @@ export default function DefaultSources() {
         <Title>Default Sources</Title>
         <BtnRow>
           <Btn secondary onClick={() => setShowAdd(true)}>+ Add Single</Btn>
-          <Btn onClick={() => setShowBulk(true)}>⬆ Bulk Upload</Btn>
+          <Btn secondary onClick={() => setShowBulk(true)}>⬆ Bulk Upload</Btn>
+          <Btn onClick={handlePushToAll} disabled={pushing} style={{ background: '#6b46c1' }}>
+            {pushing ? 'Pushing…' : '📤 Push to All Users'}
+          </Btn>
         </BtnRow>
       </Header>
 
@@ -534,6 +632,7 @@ export default function DefaultSources() {
       </FilterRow>
 
       {error && <ErrorBanner style={{ marginBottom: '1rem' }}>{error}</ErrorBanner>}
+      {pushMsg && <SuccessBanner style={{ marginBottom: '1rem' }}>{pushMsg}</SuccessBanner>}
 
       {loading ? (
         <p style={{ color: 'var(--text-light)' }}>Loading…</p>

@@ -480,6 +480,8 @@ export default function URLs() {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
   const [scraping, setScraping] = useState({});
   const [editSource, setEditSource] = useState(null);
   const navigate = useNavigate();
@@ -519,6 +521,24 @@ export default function URLs() {
     setEditSource(null);
   };
 
+  const handleSyncDefaults = async () => {
+    setSyncing(true); setSyncMsg(''); setError('');
+    try {
+      const res = await authFetch('/sources/sync-defaults', { method: 'POST' });
+      if (!res.ok) throw new Error('Sync failed');
+      const data = await res.json();
+      setSyncMsg(data.added > 0
+        ? `Added ${data.added} new default source${data.added > 1 ? 's' : ''}.`
+        : 'Already up to date — no new defaults to add.'
+      );
+      if (data.added > 0) loadSources();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleScrape = async (id) => {
     setScraping(s => ({ ...s, [id]: true }));
     try {
@@ -533,10 +553,27 @@ export default function URLs() {
     <Page>
       <Header>
         <Title>Job Sources</Title>
-        <AddButton onClick={() => navigate('/urls/add')}>+ Add Source</AddButton>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <AddButton
+            onClick={handleSyncDefaults}
+            disabled={syncing}
+            style={{ background: '#6b46c1' }}
+          >
+            {syncing ? 'Syncing…' : '↓ Get Default Sources'}
+          </AddButton>
+          <AddButton onClick={() => navigate('/urls/add')}>+ Add Source</AddButton>
+        </div>
       </Header>
 
       {error && <ErrorBanner>{error}</ErrorBanner>}
+      {syncMsg && (
+        <div style={{
+          background: '#f0fff4', border: '1px solid #9ae6b4', color: '#276749',
+          padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.875rem'
+        }}>
+          {syncMsg}
+        </div>
+      )}
 
       {loading ? (
         <StatusText>Loading…</StatusText>
