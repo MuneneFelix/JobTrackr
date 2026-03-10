@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import styled from "styled-components";
 import { useAuth } from "../context/AuthContext";
 
@@ -321,12 +321,17 @@ const DangerBtn = styled.button`
 export default function Jobs() {
   const { authFetch } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [jobs, setJobs] = useState([]);
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState({ sourceId: "", newOnly: false, starredOnly: false });
+  const [filter, setFilter] = useState({
+    sourceId: searchParams.get("source") || "",
+    newOnly: false,
+    starredOnly: false,
+  });
   const [scraping, setScraping] = useState({});
   const [scrapeTarget, setScrapeTarget] = useState("all");
   const [confirm, setConfirm] = useState(null); // { type: 'delete'|'blacklist', job }
