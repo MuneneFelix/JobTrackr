@@ -60,6 +60,19 @@ const ErrorBanner = styled.div`
   font-size: 0.875rem;
 `;
 
+const SmtpWarning = styled.div`
+  background: #fffaf0;
+  border: 1px solid #f6ad55;
+  color: #c05621;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.25rem;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+`;
+
 // ── Draft card ───────────────────────────────────────────────────────────────
 
 const DraftList = styled.div`
@@ -100,13 +113,30 @@ const JobCompany = styled.div`
   font-weight: 500;
 `;
 
-const SentPill = styled.span`
+const StatusPill = styled.span`
   padding: 0.2rem 0.7rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
-  background: #f0fff4;
-  color: #276749;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  ${p => p.$s === 'sent'    && 'background: #f0fff4; color: #276749;'}
+  ${p => p.$s === 'saved'   && 'background: #ebf8ff; color: #2b6cb0;'}
+  ${p => p.$s === 'failed'  && 'background: #fff5f5; color: #c53030;'}
+  ${p => p.$s === 'sending' && 'background: #fffff0; color: #975a16;'}
+  ${p => p.$s === 'saving'  && 'background: #f7fafc; color: #718096;'}
+`;
+
+const MiniSpinner = styled.span`
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 `;
 
 const DraftBody = styled.div`
@@ -134,6 +164,7 @@ const FieldInput = styled.input`
   font-size: 0.9rem;
   box-sizing: border-box;
   &:focus { outline: none; border-color: var(--primary-teal); }
+  &:disabled { background: #f7fafc; cursor: not-allowed; }
 `;
 
 const FieldTextarea = styled.textarea`
@@ -148,6 +179,7 @@ const FieldTextarea = styled.textarea`
   line-height: 1.6;
   font-family: inherit;
   &:focus { outline: none; border-color: var(--primary-teal); }
+  &:disabled { background: #f7fafc; cursor: not-allowed; }
 `;
 
 // ── Tailored resume panel ────────────────────────────────────────────────────
@@ -238,6 +270,20 @@ const Msg = styled.span`
   color: ${p => p.$error ? 'var(--error)' : '#38a169'};
 `;
 
+// ── Pill label helpers ────────────────────────────────────────────────────────
+
+function CardStatusPill({ status }) {
+  if (!status) return null;
+  const labels = {
+    saving:  <><MiniSpinner /> Saving…</>,
+    sending: <><MiniSpinner /> Sending…</>,
+    sent:    '✓ Sent',
+    saved:   '💾 Saved',
+    failed:  '✗ Failed',
+  };
+  return <StatusPill $s={status}>{labels[status]}</StatusPill>;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function Apply() {
@@ -249,12 +295,13 @@ export default function Apply() {
 
   const [generating, setGenerating] = useState(true);
   const [error, setError] = useState('');
-  const [drafts, setDrafts] = useState([]);       // array of draft objects
+  const [drafts, setDrafts] = useState([]);
   const [profile, setProfile] = useState(null);
-  const [open, setOpen] = useState({});            // resume panel open state per draft index
+  const [open, setOpen] = useState({});
   const [sending, setSending] = useState(false);
-  const [sentIds, setSentIds] = useState(new Set());
+  const [sendStatus, setSendStatus] = useState({});   // { [jobId]: 'saving'|'sending'|'sent'|'failed'|'saved' }
   const [sendMsg, setSendMsg] = useState({ text: '', error: false });
+  const [smtpError, setSmtpError] = useState('');
 
   useEffect(() => {
     if (!jobIds.length) {
@@ -279,21 +326,89 @@ export default function Apply() {
   const updateDraft = (i, field, val) =>
     setDrafts(prev => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
 
+  const isProcessed = (jobId) => {
+    const s = sendStatus[jobId];
+    return s === 'sent' || s === 'saved' || s === 'failed';
+  };
+
+  const allProcessed = drafts.length > 0 && drafts.every(d => isProcessed(d.job_id));
+
   const sendAll = async () => {
     setSending(true);
     setSendMsg({ text: '', error: false });
+    setSmtpError('');
+
+    // Mark all as 'saving'
+    const init = {};
+    drafts.forEach(d => { init[d.job_id] = 'saving'; });
+    setSendStatus(init);
+
     try {
-      const res = await authFetch('/applications/', {
+      // Step 1: Save all drafts
+      const saveRes = await authFetch('/applications/', {
         method: 'POST',
-        body: JSON.stringify({
-          drafts: drafts.map(d => ({ ...d, status: 'sent' })),
-        }),
+        body: JSON.stringify({ drafts }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Failed to save');
-      setSentIds(new Set(data.map(a => a.job_id)));
-      setSendMsg({ text: `${data.length} application${data.length !== 1 ? 's' : ''} marked as sent!`, error: false });
+      const saved = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saved.detail || 'Failed to save applications');
+
+      // Build jobId → application.id map
+      const appMap = {};
+      saved.forEach(app => { appMap[app.job_id] = app.id; });
+
+      // Step 2: Send emails per draft
+      const results = {};
+      let smtpConfigError = '';
+
+      for (const draft of drafts) {
+        if (!draft.email_to?.trim()) {
+          results[draft.job_id] = 'saved';
+          setSendStatus(prev => ({ ...prev, [draft.job_id]: 'saved' }));
+          continue;
+        }
+
+        const appId = appMap[draft.job_id];
+        if (!appId) {
+          results[draft.job_id] = 'failed';
+          setSendStatus(prev => ({ ...prev, [draft.job_id]: 'failed' }));
+          continue;
+        }
+
+        setSendStatus(prev => ({ ...prev, [draft.job_id]: 'sending' }));
+
+        try {
+          const sendRes = await authFetch(`/applications/${appId}/send`, { method: 'POST' });
+          const sendData = await sendRes.json();
+
+          if (sendRes.status === 503) {
+            smtpConfigError = sendData.detail ||
+              'Email sending is not configured. Ask your admin to set up SMTP under Admin → SMTP Settings.';
+            results[draft.job_id] = 'saved'; // saved in DB, but not emailed
+          } else if (!sendRes.ok) {
+            results[draft.job_id] = 'failed';
+          } else {
+            results[draft.job_id] = 'sent';
+          }
+        } catch {
+          results[draft.job_id] = 'failed';
+        }
+
+        setSendStatus(prev => ({ ...prev, [draft.job_id]: results[draft.job_id] }));
+      }
+
+      if (smtpConfigError) setSmtpError(smtpConfigError);
+
+      const sentCount  = Object.values(results).filter(s => s === 'sent').length;
+      const savedCount = Object.values(results).filter(s => s === 'saved').length;
+      const failedCount= Object.values(results).filter(s => s === 'failed').length;
+      const parts = [];
+      if (sentCount)   parts.push(`${sentCount} email${sentCount !== 1 ? 's' : ''} sent`);
+      if (savedCount)  parts.push(`${savedCount} saved`);
+      if (failedCount) parts.push(`${failedCount} failed`);
+      setSendMsg({ text: parts.join(', '), error: failedCount > 0 });
+
     } catch (err) {
+      setSendStatus({});
       setSendMsg({ text: err.message, error: true });
     } finally {
       setSending(false);
@@ -333,9 +448,17 @@ export default function Apply() {
         </Subtitle>
       </PageHeader>
 
+      {smtpError && (
+        <SmtpWarning>
+          <span>⚠️</span>
+          <span>{smtpError}</span>
+        </SmtpWarning>
+      )}
+
       <DraftList>
         {drafts.map((draft, i) => {
-          const sent = sentIds.has(draft.job_id);
+          const cardProcessed = isProcessed(draft.job_id);
+          const cardStatus    = sendStatus[draft.job_id];
           return (
             <DraftCard key={draft.job_id}>
               <DraftHeader>
@@ -343,7 +466,7 @@ export default function Apply() {
                   <JobTitle>{draft.job_title}</JobTitle>
                   <JobCompany>{draft.job_company}</JobCompany>
                 </JobMeta>
-                {sent && <SentPill>Sent</SentPill>}
+                <CardStatusPill status={cardStatus} />
               </DraftHeader>
 
               <DraftBody>
@@ -354,8 +477,8 @@ export default function Apply() {
                     type="email"
                     value={draft.email_to}
                     onChange={e => updateDraft(i, 'email_to', e.target.value)}
-                    placeholder="recruiter@company.com"
-                    disabled={sent}
+                    placeholder="recruiter@company.com (leave blank to save as draft)"
+                    disabled={cardProcessed}
                   />
                 </div>
 
@@ -366,7 +489,7 @@ export default function Apply() {
                     type="text"
                     value={draft.email_subject}
                     onChange={e => updateDraft(i, 'email_subject', e.target.value)}
-                    disabled={sent}
+                    disabled={cardProcessed}
                   />
                 </div>
 
@@ -376,7 +499,7 @@ export default function Apply() {
                   <FieldTextarea
                     value={draft.email_body}
                     onChange={e => updateDraft(i, 'email_body', e.target.value)}
-                    disabled={sent}
+                    disabled={cardProcessed}
                   />
                 </div>
 
@@ -418,11 +541,11 @@ export default function Apply() {
       <ActionBar>
         <BackBtn onClick={() => navigate('/jobs')}>Back to jobs</BackBtn>
         {sendMsg.text && <Msg $error={sendMsg.error}>{sendMsg.text}</Msg>}
-        <SendBtn onClick={sendAll} disabled={sending || sentIds.size === drafts.length}>
+        <SendBtn onClick={sendAll} disabled={sending || allProcessed}>
           {sending
-            ? 'Saving…'
-            : sentIds.size === drafts.length
-            ? 'All sent!'
+            ? 'Processing…'
+            : allProcessed
+            ? '✓ All done!'
             : `Send ${drafts.length} application${drafts.length !== 1 ? 's' : ''}`}
         </SendBtn>
       </ActionBar>

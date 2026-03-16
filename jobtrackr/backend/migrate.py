@@ -49,6 +49,40 @@ migrations = [
     )""",
     "CREATE INDEX IF NOT EXISTS ix_scrape_cache_url        ON scrape_cache (url)",
     "CREATE INDEX IF NOT EXISTS ix_scrape_cache_scraped_at ON scrape_cache (scraped_at)",
+    # SMTP configuration (singleton, admin-managed)
+    """CREATE TABLE IF NOT EXISTS smtp_config (
+        id         INTEGER PRIMARY KEY DEFAULT 1,
+        host       TEXT    NOT NULL,
+        port       INTEGER DEFAULT 587,
+        username   TEXT    NOT NULL,
+        password   TEXT    NOT NULL,
+        from_email TEXT    NOT NULL,
+        from_name  TEXT    DEFAULT 'JobTrackr',
+        use_tls    BOOLEAN DEFAULT 1,
+        updated_at DATETIME DEFAULT (datetime('now'))
+    )""",
+    # Per-user email digest preferences
+    """CREATE TABLE IF NOT EXISTS digest_configs (
+        id        INTEGER  PRIMARY KEY AUTOINCREMENT,
+        user_id   INTEGER  NOT NULL UNIQUE REFERENCES users(id),
+        enabled   BOOLEAN  DEFAULT 1,
+        frequency TEXT     DEFAULT 'daily',
+        send_hour INTEGER  DEFAULT 8,
+        last_sent DATETIME
+    )""",
+    # Audit trail of all outgoing emails
+    """CREATE TABLE IF NOT EXISTS email_logs (
+        id           INTEGER  PRIMARY KEY AUTOINCREMENT,
+        to_email     TEXT     NOT NULL,
+        subject      TEXT     NOT NULL,
+        body_preview TEXT,
+        email_type   TEXT     NOT NULL,
+        status       TEXT     NOT NULL,
+        error        TEXT,
+        user_id      INTEGER  REFERENCES users(id),
+        sent_at      DATETIME DEFAULT (datetime('now'))
+    )""",
+    "CREATE INDEX IF NOT EXISTS ix_email_logs_sent_at ON email_logs (sent_at)",
 ]
 
 for sql in migrations:

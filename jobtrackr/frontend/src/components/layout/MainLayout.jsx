@@ -416,9 +416,12 @@ function MainLayout() {
                       <DropItem to="/profile" onClick={() => setDropOpen(false)}>
                         👤 Profile
                       </DropItem>
+                      <DropItem to="/settings" onClick={() => setDropOpen(false)}>
+                        ⚙️ Settings
+                      </DropItem>
                       {isAdmin && (
                         <DropItem to="/admin" onClick={() => setDropOpen(false)}>
-                          ⚙️ Admin panel
+                          🛡️ Admin panel
                         </DropItem>
                       )}
                       <DropButton onClick={handleLogout}>
@@ -455,6 +458,7 @@ function MainLayout() {
               <DrawerLink to="/urls"      active={isActive('/urls')}>Sources</DrawerLink>
               <DrawerLink to="/jobs"      active={isActive('/jobs')}>Jobs</DrawerLink>
               <DrawerLink to="/profile"   active={isActive('/profile')}>Profile</DrawerLink>
+              <DrawerLink to="/settings"  active={isActive('/settings')}>Settings</DrawerLink>
               {isAdmin && <DrawerLink to="/admin" active={isActive('/admin')}>Admin</DrawerLink>}
               <DrawerDivider />
               <DrawerLogout onClick={handleLogout}>Sign out</DrawerLogout>

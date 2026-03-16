@@ -196,3 +196,62 @@ class ApplicationOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── SMTP Configuration ────────────────────────────────────────────────────────
+
+class SMTPConfigIn(BaseModel):
+    host: str
+    port: int = 587
+    username: str
+    password: str
+    from_email: EmailStr
+    from_name: str = "JobTrackr"
+    use_tls: bool = True
+
+class SMTPConfigOut(BaseModel):
+    host: str
+    port: int
+    username: str
+    password: str   # masked as "****" by the endpoint
+    from_email: str
+    from_name: str
+    use_tls: bool
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ── Digest Config ─────────────────────────────────────────────────────────────
+
+class DigestConfigOut(BaseModel):
+    enabled: bool
+    frequency: str
+    send_hour: int
+    last_sent: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class DigestConfigUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    frequency: Optional[str] = None   # daily | weekly | never
+    send_hour: Optional[int] = None   # 0–23
+
+
+# ── Email Log ─────────────────────────────────────────────────────────────────
+
+class EmailLogOut(BaseModel):
+    id: int
+    to_email: str
+    subject: str
+    body_preview: Optional[str] = None
+    email_type: str
+    status: str
+    error: Optional[str] = None
+    user_id: Optional[int] = None
+    sent_at: datetime
+
+    class Config:
+        from_attributes = True

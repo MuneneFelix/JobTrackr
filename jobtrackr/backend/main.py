@@ -11,13 +11,19 @@ from contextlib import asynccontextmanager
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 import asyncio
+import base64
 import datetime
 import hashlib
 import json
 import logging
 import os
 import io
+import smtplib
+import ssl
 import secrets
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -61,6 +67,111 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 def _sha256(value: str) -> str:
     """Return a hex SHA-256 digest of value — used to store lookup tokens without exposing plaintext."""
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+# ── Fernet encryption helpers (for SMTP password at rest) ────────────────────
+
+def _fernet() -> Fernet:
+    """Derive a stable Fernet key from SECRET_KEY."""
+    raw = hashlib.sha256(SECRET_KEY.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(raw))
+
+def _encrypt(plain: str) -> str:
+    return _fernet().encrypt(plain.encode()).decode()
+
+def _decrypt(token: str) -> str:
+    return _fernet().decrypt(token.encode()).decode()
+
+
+# ── Email send helper ─────────────────────────────────────────────────────────
+
+def _send_email(
+    to: str,
+    subject: str,
+    body: str,
+    db,
+    *,
+    email_type: str = "application",
+    user_id: int | None = None,
+) -> None:
+    """Send an email via the configured SMTP server and log the result."""
+    cfg = db.query(models.SMTPConfig).filter(models.SMTPConfig.id == 1).first()
+    if not cfg:
+        raise HTTPException(status_code=503, detail="SMTP not configured")
+
+    password = _decrypt(cfg.password)
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"{cfg.from_name} <{cfg.from_email}>"
+    msg["To"]      = to
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    error_str: str | None = None
+    try:
+        if cfg.use_tls:
+            with smtplib.SMTP(cfg.host, cfg.port, timeout=15) as server:
+                server.ehlo()
+                server.starttls(context=ssl.create_default_context())
+                server.login(cfg.username, password)
+                server.sendmail(cfg.from_email, to, msg.as_string())
+        else:
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(cfg.host, cfg.port, context=ctx, timeout=15) as server:
+                server.login(cfg.username, password)
+                server.sendmail(cfg.from_email, to, msg.as_string())
+        status = "sent"
+    except Exception as exc:
+        error_str = str(exc)
+        status = "failed"
+        logger.error("Email send failed to %s: %s", to, exc)
+
+    # Always log the attempt
+    db.add(models.EmailLog(
+        to_email=to,
+        subject=subject,
+        body_preview=body[:400],
+        email_type=email_type,
+        status=status,
+        error=error_str,
+        user_id=user_id,
+    ))
+    db.commit()
+
+    if status == "failed":
+        raise HTTPException(status_code=502, detail=f"Email delivery failed: {error_str}")
+
+
+# ── Digest body builder ───────────────────────────────────────────────────────
+
+def _build_digest_body(jobs: list, user) -> str:
+    name = ""
+    if hasattr(user, "profile") and user.profile and user.profile.full_name:
+        name = user.profile.full_name.split()[0]
+    greeting = f"Hi {name}," if name else "Hi,"
+
+    lines = [
+        f"{greeting}",
+        f"",
+        f"Here are your {len(jobs)} new job listing{'s' if len(jobs) > 1 else ''} from JobTrackr:",
+        f"",
+    ]
+    for j in jobs:
+        lines.append(f"  • {j.title} — {j.company or 'Unknown company'}")
+        if j.location:
+            lines.append(f"    Location: {j.location}")
+        if j.url:
+            lines.append(f"    Link: {j.url}")
+        lines.append("")
+
+    lines += [
+        "Log in to review and apply: https://jobtrackr.space/jobs",
+        "",
+        "— The JobTrackr Team",
+        "",
+        "To change your digest settings, visit: https://jobtrackr.space/settings",
+    ]
+    return "\n".join(lines)
 
 
 def create_access_token(email: str) -> str:
@@ -243,12 +354,86 @@ def schedule_all_sources():
         db.close()
 
 
+def send_digest_job():
+    """Hourly APScheduler job: send email digests to users whose window has elapsed."""
+    db = database.SessionLocal()
+    try:
+        now = datetime.datetime.utcnow()
+        configs = (
+            db.query(models.DigestConfig)
+            .filter(
+                models.DigestConfig.enabled == True,
+                models.DigestConfig.frequency != "never",
+            )
+            .all()
+        )
+        for cfg in configs:
+            # Check frequency window
+            if cfg.frequency == "daily":
+                if cfg.last_sent and (now - cfg.last_sent).total_seconds() < 82800:
+                    continue
+            elif cfg.frequency == "weekly":
+                if cfg.last_sent and (now - cfg.last_sent).total_seconds() < 604800:
+                    continue
+
+            # Only fire at the configured hour
+            if now.hour != cfg.send_hour:
+                continue
+
+            user = db.query(models.User).filter(models.User.id == cfg.user_id).first()
+            if not user or not user.is_active:
+                continue
+
+            since = cfg.last_sent or (now - datetime.timedelta(days=7))
+            source_ids = [s.id for s in user.sources if s.is_active]
+            if not source_ids:
+                cfg.last_sent = now
+                db.commit()
+                continue
+
+            new_jobs = (
+                db.query(models.JobListing)
+                .filter(
+                    models.JobListing.source_id.in_(source_ids),
+                    models.JobListing.found_at >= since,
+                )
+                .order_by(models.JobListing.found_at.desc())
+                .limit(50)
+                .all()
+            )
+
+            cfg.last_sent = now
+            db.commit()
+
+            if not new_jobs:
+                continue
+
+            subject = f"JobTrackr: {len(new_jobs)} new job{'s' if len(new_jobs) > 1 else ''} found"
+            body = _build_digest_body(new_jobs, user)
+            try:
+                _send_email(
+                    user.email, subject, body, db,
+                    email_type="digest", user_id=cfg.user_id,
+                )
+            except Exception as exc:
+                logger.error("Digest send failed for user %s: %s", user.id, exc)
+    finally:
+        db.close()
+
+
 scheduler = BackgroundScheduler()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     schedule_all_sources()
+    scheduler.add_job(
+        send_digest_job,
+        trigger="interval",
+        hours=1,
+        id="send_digest_job",
+        replace_existing=True,
+    )
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -1296,3 +1481,238 @@ def list_applications(
         )
         for a in apps
     ]
+
+
+@app.post("/applications/{application_id}/send")
+def send_application_email(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Send a saved application email via SMTP and mark it as sent."""
+    app_obj = db.query(models.Application).filter(
+        models.Application.id == application_id,
+        models.Application.user_id == current_user.id,
+    ).first()
+    if not app_obj:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app_obj.email_to:
+        raise HTTPException(status_code=400, detail="No recipient address on this application")
+
+    _send_email(
+        app_obj.email_to,
+        app_obj.email_subject or "(no subject)",
+        app_obj.email_body or "",
+        db,
+        email_type="application",
+        user_id=current_user.id,
+    )
+    app_obj.status = "sent"
+    db.commit()
+    return {"sent": True, "to": app_obj.email_to}
+
+
+# ── SMTP config (admin) ───────────────────────────────────────────────────────
+
+@app.get("/admin/smtp/", response_model=schemas.SMTPConfigOut)
+def get_smtp_config(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    cfg = db.query(models.SMTPConfig).filter(models.SMTPConfig.id == 1).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="SMTP not configured")
+    return schemas.SMTPConfigOut(
+        host=cfg.host,
+        port=cfg.port,
+        username=cfg.username,
+        password="****",
+        from_email=cfg.from_email,
+        from_name=cfg.from_name,
+        use_tls=cfg.use_tls,
+        updated_at=cfg.updated_at,
+    )
+
+
+@app.put("/admin/smtp/", response_model=schemas.SMTPConfigOut)
+def save_smtp_config(
+    body: schemas.SMTPConfigIn,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    cfg = db.query(models.SMTPConfig).filter(models.SMTPConfig.id == 1).first()
+    encrypted_pw = _encrypt(body.password)
+    if cfg:
+        cfg.host       = body.host
+        cfg.port       = body.port
+        cfg.username   = body.username
+        cfg.password   = encrypted_pw
+        cfg.from_email = body.from_email
+        cfg.from_name  = body.from_name
+        cfg.use_tls    = body.use_tls
+        cfg.updated_at = datetime.datetime.utcnow()
+    else:
+        cfg = models.SMTPConfig(
+            id=1,
+            host=body.host, port=body.port,
+            username=body.username, password=encrypted_pw,
+            from_email=body.from_email, from_name=body.from_name,
+            use_tls=body.use_tls,
+        )
+        db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return schemas.SMTPConfigOut(
+        host=cfg.host, port=cfg.port, username=cfg.username,
+        password="****", from_email=cfg.from_email,
+        from_name=cfg.from_name, use_tls=cfg.use_tls, updated_at=cfg.updated_at,
+    )
+
+
+@app.post("/admin/smtp/test")
+def test_smtp(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    _send_email(
+        current_user.email,
+        "JobTrackr SMTP Test",
+        "This is a test email from your JobTrackr instance. SMTP is working correctly.",
+        db,
+        email_type="test",
+        user_id=current_user.id,
+    )
+    return {"sent": True, "to": current_user.email}
+
+
+# ── Digest config (per user) ──────────────────────────────────────────────────
+
+def _get_or_create_digest(db, user_id: int) -> models.DigestConfig:
+    cfg = db.query(models.DigestConfig).filter(models.DigestConfig.user_id == user_id).first()
+    if not cfg:
+        cfg = models.DigestConfig(user_id=user_id)
+        db.add(cfg)
+        db.commit()
+        db.refresh(cfg)
+    return cfg
+
+
+@app.get("/users/me/digest", response_model=schemas.DigestConfigOut)
+def get_digest_config(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    return _get_or_create_digest(db, current_user.id)
+
+
+@app.patch("/users/me/digest", response_model=schemas.DigestConfigOut)
+def update_digest_config(
+    body: schemas.DigestConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    cfg = _get_or_create_digest(db, current_user.id)
+    if body.enabled is not None:
+        cfg.enabled = body.enabled
+    if body.frequency is not None:
+        if body.frequency not in ("daily", "weekly", "never"):
+            raise HTTPException(status_code=400, detail="frequency must be daily, weekly, or never")
+        cfg.frequency = body.frequency
+    if body.send_hour is not None:
+        if not (0 <= body.send_hour <= 23):
+            raise HTTPException(status_code=400, detail="send_hour must be 0–23")
+        cfg.send_hour = body.send_hour
+    db.commit()
+    db.refresh(cfg)
+    return cfg
+
+
+# ── Admin email logs ──────────────────────────────────────────────────────────
+
+@app.get("/admin/emails/", response_model=list[schemas.EmailLogOut])
+def list_email_logs(
+    email_type: str | None = None,
+    page: int = 1,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    PAGE_SIZE = 30
+    q = db.query(models.EmailLog).order_by(models.EmailLog.sent_at.desc())
+    if email_type:
+        q = q.filter(models.EmailLog.email_type == email_type)
+    return q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+
+
+# ── Admin system health ───────────────────────────────────────────────────────
+
+@app.get("/admin/health/")
+def system_health(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    report = {}
+
+    # API
+    report["api"] = {"status": "ok", "detail": "FastAPI responding"}
+
+    # Database
+    try:
+        user_count = db.query(models.User).count()
+        report["database"] = {"status": "ok", "detail": f"{user_count} users in DB"}
+    except Exception as e:
+        report["database"] = {"status": "error", "detail": str(e)}
+
+    # Groq API key
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if groq_key:
+        report["groq"] = {"status": "ok", "detail": "API key present"}
+    else:
+        report["groq"] = {"status": "unconfigured", "detail": "GROQ_API_KEY not set"}
+
+    # APScheduler
+    try:
+        job_count = len(scheduler.get_jobs())
+        s_status = "ok" if scheduler.running else "stopped"
+        report["scheduler"] = {"status": s_status, "detail": f"{job_count} jobs scheduled"}
+    except Exception as e:
+        report["scheduler"] = {"status": "error", "detail": str(e)}
+
+    # SMTP
+    smtp_cfg = db.query(models.SMTPConfig).filter(models.SMTPConfig.id == 1).first()
+    if smtp_cfg:
+        report["smtp"] = {"status": "configured", "detail": f"{smtp_cfg.host}:{smtp_cfg.port}"}
+    else:
+        report["smtp"] = {"status": "unconfigured", "detail": "No SMTP config saved"}
+
+    # Scrape cache
+    try:
+        cache_count = db.query(models.ScrapeCache).count()
+        report["cache"] = {"status": "ok", "detail": f"{cache_count} cached URL entries"}
+    except Exception as e:
+        report["cache"] = {"status": "error", "detail": str(e)}
+
+    # Disk (DB file size)
+    try:
+        db_url = os.getenv("DATABASE_URL", "sqlite:///./jobtrackr.db")
+        db_path = db_url.replace("sqlite:////", "/").replace("sqlite:///", "")
+        if os.path.exists(db_path):
+            size_mb = os.path.getsize(db_path) / (1024 * 1024)
+            d_status = "warn" if size_mb > 500 else "ok"
+            report["disk"] = {"status": d_status, "detail": f"DB file: {size_mb:.1f} MB"}
+        else:
+            report["disk"] = {"status": "ok", "detail": "DB path not found (in-memory?)"}
+    except Exception as e:
+        report["disk"] = {"status": "error", "detail": str(e)}
+
+    return report

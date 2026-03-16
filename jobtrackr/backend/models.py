@@ -23,6 +23,7 @@ class User(Base):
     sources = relationship("JobSource", back_populates="owner")
     profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete")
     applications = relationship("Application", back_populates="user", cascade="all, delete")
+    digest_config = relationship("DigestConfig", back_populates="user", uselist=False, cascade="all, delete")
 
 
 class JobSource(Base):
@@ -136,3 +137,50 @@ class Application(Base):
 
     user = relationship("User", back_populates="applications")
     job = relationship("JobListing", back_populates="applications")
+
+
+# ── Email infrastructure ───────────────────────────────────────────────────────
+
+class SMTPConfig(Base):
+    """Singleton SMTP configuration managed by admin."""
+    __tablename__ = "smtp_config"
+
+    id         = Column(Integer, primary_key=True, default=1)
+    host       = Column(String, nullable=False)
+    port       = Column(Integer, default=587)
+    username   = Column(String, nullable=False)
+    password   = Column(String, nullable=False)   # Fernet-encrypted
+    from_email = Column(String, nullable=False)
+    from_name  = Column(String, default="JobTrackr")
+    use_tls    = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow,
+                        onupdate=datetime.datetime.utcnow)
+
+
+class DigestConfig(Base):
+    """Per-user email digest preferences."""
+    __tablename__ = "digest_configs"
+
+    id        = Column(Integer, primary_key=True)
+    user_id   = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    enabled   = Column(Boolean, default=True)
+    frequency = Column(String, default="daily")   # daily | weekly | never
+    send_hour = Column(Integer, default=8)         # 0–23 UTC hour
+    last_sent = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="digest_config")
+
+
+class EmailLog(Base):
+    """Audit trail of all outgoing emails."""
+    __tablename__ = "email_logs"
+
+    id           = Column(Integer, primary_key=True)
+    to_email     = Column(String, nullable=False)
+    subject      = Column(String, nullable=False)
+    body_preview = Column(String, nullable=True)   # first 400 chars
+    email_type   = Column(String, nullable=False)  # application | digest | test
+    status       = Column(String, nullable=False)  # sent | failed
+    error        = Column(String, nullable=True)
+    user_id      = Column(Integer, ForeignKey("users.id"), nullable=True)
+    sent_at      = Column(DateTime, default=datetime.datetime.utcnow, index=True)

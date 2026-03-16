@@ -116,6 +116,9 @@ function AdminLayout() {
         <NavSection>
           <NavLabel>System</NavLabel>
           <MenuItem to="/admin/settings">🔐 Audit Log</MenuItem>
+          <MenuItem to="/admin/emails">📬 Email Outbox</MenuItem>
+          <MenuItem to="/admin/smtp">✉️ SMTP Settings</MenuItem>
+          <MenuItem to="/admin/health">🏥 System Health</MenuItem>
         </NavSection>
 
         <BackLink to="/dashboard">← Back to App</BackLink>

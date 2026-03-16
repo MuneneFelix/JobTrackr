@@ -31,6 +31,12 @@ import AdminJobs from './pages/admin/Jobs';
 import AdminAnalytics from './pages/admin/Analytics';
 import AdminSettings from './pages/admin/Settings';
 import AdminDefaultSources from './pages/admin/DefaultSources';
+import AdminSMTP from './pages/admin/SMTP';
+import AdminEmails from './pages/admin/Emails';
+import AdminHealth from './pages/admin/Health';
+
+// User Pages
+import Settings from './pages/Settings';
 
 // Protected Route Component
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -89,6 +95,11 @@ function App() {
                     <Apply />
                   </ProtectedRoute>
                 } />
+                <Route path="/settings" element={
+                  <ProtectedRoute>
+                    <Settings />
+                  </ProtectedRoute>
+                } />
               </Route>
 
               {/* Protected admin routes */}
@@ -104,6 +115,9 @@ function App() {
                 <Route path="analytics" element={<AdminAnalytics />} />
                 <Route path="settings" element={<AdminSettings />} />
                 <Route path="default-sources" element={<AdminDefaultSources />} />
+                <Route path="smtp" element={<AdminSMTP />} />
+                <Route path="emails" element={<AdminEmails />} />
+                <Route path="health" element={<AdminHealth />} />
               </Route>
             </Routes>
           </Router>
